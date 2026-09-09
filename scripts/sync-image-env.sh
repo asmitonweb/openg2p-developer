@@ -12,7 +12,9 @@ if [[ -f "${ROOT_DIR}/.env" ]]; then
 fi
 
 # Map versions.yaml image keys → Compose / .env variable names.
-python3 - "$VERSIONS_FILE" "${TARGETS[@]}" <<'PY'
+# Force UTF-8 stdout: on Windows the default cp1252 console encoding cannot encode
+# the arrow in this script's own progress output, which aborted the sync midway.
+PYTHONIOENCODING=utf-8 python3 - "$VERSIONS_FILE" "${TARGETS[@]}" <<'PY'
 from __future__ import annotations
 
 import re
@@ -102,6 +104,9 @@ for target in targets:
         kept.append(line)
     body = "".join(kept)
     body = block_re.sub("", body).rstrip() + "\n\n" + block
-    target.write_text(body, encoding="utf-8")
+    # newline="" keeps LF endings: Python would otherwise translate to CRLF on Windows,
+    # which breaks env parsing and any script sourced by sh inside a container.
+    with target.open("w", encoding="utf-8", newline="") as fh:
+        fh.write(body)
     print(f"Synced {len(pairs)} image pins → {target}")
 PY

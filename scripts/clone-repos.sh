@@ -18,13 +18,13 @@ mkdir -p "$OPENG2P_WORKSPACE"
 ODOO_REF="${ODOO_REF:-17.0}"
 PBMS_REF="${PBMS_REF:-develop}"
 REGISTRY_REF="${REGISTRY_REF:-1.2}"
-IAM_REF="${IAM_REF:-develop}"
-MASTER_DATA_REF="${MASTER_DATA_REF:-develop}"
-FARMER_REGISTRY_REF="${FARMER_REGISTRY_REF:-1.3}"
+IAM_REF="${IAM_REF:-1.4}"
+MASTER_DATA_REF="${MASTER_DATA_REF:-1.1}"
+FARMER_REGISTRY_REF="${FARMER_REGISTRY_REF:-1.2}"
 NSR_REF="${NSR_REF:-1.1}"
 G2P_BRIDGE_REF="${G2P_BRIDGE_REF:-develop}"
 SPAR_REF="${SPAR_REF:-develop}"
-AWE_REF="${AWE_REF:-develop}"
+AWE_REF="${AWE_REF:-1.2}"
 
 clone_repo() {
   local name="$1"
@@ -73,22 +73,22 @@ clone_repo_key() {
       clone_repo "OpenG2P Odoo Commons" "https://github.com/OpenG2P/openg2p-odoo-commons.git" "$PBMS_REF" "openg2p-odoo-commons"
       ;;
     registry_platform)
-      clone_repo "Registry Platform" "https://gitlab.com/openg2p/registry/registry-platform.git" "$REGISTRY_REF" "registry-platform"
+      clone_repo "Registry Platform" "https://github.com/OpenG2P/registry-platform.git" "$REGISTRY_REF" "registry-platform"
       ;;
     iam_service)
-      clone_repo "IAM Service" "https://github.com/OpenG2P/iam-service.git" "$IAM_REF" "iam-service"
+      clone_repo "IAM Service" "https://github.com/OpenG2P/iam.git" "$IAM_REF" "iam-service"
       ;;
     master_data_service)
-      clone_repo "Master Data Service" "https://gitlab.com/openg2p/master-data-service.git" "$MASTER_DATA_REF" "master-data-service"
+      clone_repo "Master Data Service" "https://github.com/OpenG2P/master-data-service.git" "$MASTER_DATA_REF" "master-data-service"
       ;;
     openg2p_data)
       clone_repo "OpenG2P Sample Data" "https://github.com/OpenG2P/openg2p-data.git" "develop" "openg2p-data"
       ;;
     farmer_registry)
-      clone_repo "Farmer Registry" "https://gitlab.com/openg2p/registry/farmer-registry.git" "$FARMER_REGISTRY_REF" "farmer-registry"
+      clone_repo "Farmer Registry" "https://github.com/OpenG2P/farmer-registry.git" "$FARMER_REGISTRY_REF" "farmer-registry"
       ;;
     national_social_registry)
-      clone_repo "National Social Registry" "https://gitlab.com/openg2p/registry/national-social-registry.git" "$NSR_REF" "national-social-registry"
+      clone_repo "National Social Registry" "https://github.com/OpenG2P/national-social-registry.git" "$NSR_REF" "national-social-registry"
       ;;
     g2p_bridge)
       clone_repo "G2P Bridge" "https://github.com/OpenG2P/g2p-bridge.git" "$G2P_BRIDGE_REF" "g2p-bridge"
@@ -97,7 +97,7 @@ clone_repo_key() {
       clone_repo "SPAR" "https://github.com/OpenG2P/spar.git" "$SPAR_REF" "spar"
       ;;
     awe)
-      clone_repo "Approval Workflow Engine (AWE)" "https://gitlab.com/openg2p/awe.git" "$AWE_REF" "awe"
+      clone_repo "Approval Workflow Engine (AWE)" "https://github.com/OpenG2P/awe.git" "$AWE_REF" "awe"
       ;;
     *)
       echo "Unknown repository key: ${key}" >&2

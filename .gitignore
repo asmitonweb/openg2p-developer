@@ -25,3 +25,4 @@ node_modules/
 
 # Docker volumes (if bind-mounted locally)
 data/
+CLAUDE.md

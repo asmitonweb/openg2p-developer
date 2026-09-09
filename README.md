@@ -13,7 +13,6 @@ git clone https://github.com/OpenG2P/openg2p-developer.git
 cd openg2p-developer
 cp .env.example .env
 sed -i 's/^USE_EXTERNAL_REDIS=.*/USE_EXTERNAL_REDIS=false/' .env
-docker login registry.gitlab.com
 make sync-images
 make docker-farmer-up
 ```

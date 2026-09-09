@@ -6,7 +6,7 @@ name: openg2p-developer
 services:
   iam-staff-api:
     profiles: [commons, farmer-registry, nsr-registry, full]
-    image: ${IAM_STAFF_PORTAL_API_IMAGE:-openg2p/iam-staff-portal-api:1.3.0}
+    image: ${IAM_STAFF_PORTAL_API_IMAGE:-openg2p/iam-staff-portal-api:1.4.2}
     container_name: openg2p-iam-staff-api
     extra_hosts:
       - "localhost:host-gateway"
@@ -42,7 +42,7 @@ services:
   # Service name must be `awe` — AWE UI nginx proxies /v1/awe/ to awe:8000.
   awe:
     profiles: [commons, farmer-registry, nsr-registry, full]
-    image: ${AWE_API_IMAGE:-registry.gitlab.com/openg2p/awe/openg2p-awe:0.0.0-develop.67}
+    image: ${AWE_API_IMAGE:-openg2p/openg2p-awe:1.2.2}
     container_name: openg2p-awe-api
     extra_hosts:
       - "localhost:host-gateway"
@@ -75,7 +75,7 @@ services:
 
   awe-ui:
     profiles: [commons, farmer-registry, nsr-registry, full]
-    image: ${AWE_UI_IMAGE:-registry.gitlab.com/openg2p/awe/openg2p-awe-ui:0.0.0-develop.67}
+    image: ${AWE_UI_IMAGE:-openg2p/openg2p-awe-ui:1.2.2}
     container_name: openg2p-awe-ui
     depends_on:
       awe:
@@ -90,7 +90,7 @@ services:
   # Farmer and NSR each keep their own registry UI services.
   staff-portal-ui:
     profiles: [commons, farmer-registry, nsr-registry, full]
-    image: ${STAFF_PORTAL_UI_IMAGE:-openg2p/openg2p-staff-portal-ui:0.0.0-develop.54}
+    image: ${STAFF_PORTAL_UI_IMAGE:-openg2p/openg2p-staff-portal-ui:1.2.0}
     container_name: openg2p-staff-portal-ui
     extra_hosts:
       - "localhost:host-gateway"

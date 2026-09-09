@@ -8,7 +8,7 @@ services:
   # Migrates farmer_master_data_db (geo tables required by db-seed LOAD_GEO_DATA).
   farmer-master-data-api:
     profiles: [farmer-registry, full]
-    image: ${MASTER_DATA_API_IMAGE:-registry.gitlab.com/openg2p/master-data-service/master-data-api:0.0.0-develop.26}
+    image: ${MASTER_DATA_API_IMAGE:-openg2p/master-data-api:1.1.3}
     container_name: openg2p-farmer-master-data-api
     depends_on:
       postgres:
@@ -20,9 +20,9 @@ services:
     env_file:
       - ../generated/farmer-registry/docker/master-data-api.env
     environment:
-      GEN2_MASTER_DATA_API_HOST: "0.0.0.0"
-      GEN2_MASTER_DATA_API_PORT: "8000"
-      GEN2_MASTER_DATA_API_NO_OF_WORKERS: "2"
+      MASTER_DATA_API_HOST: "0.0.0.0"
+      MASTER_DATA_API_PORT: "8000"
+      MASTER_DATA_API_NO_OF_WORKERS: "2"
     ports:
       - "${MASTER_DATA_API_PORT:-8042}:8000"
     healthcheck:
@@ -39,7 +39,7 @@ services:
 
   farmer-registry-staff-api:
     profiles: [farmer-registry, full]
-    image: ${FARMER_REGISTRY_STAFF_API_IMAGE:-openg2p/openg2p-farmer-registry-staff-api:1.2.0}
+    image: ${FARMER_REGISTRY_STAFF_API_IMAGE:-openg2p/openg2p-farmer-registry-staff-api:1.2.1-rc.163}
     container_name: openg2p-farmer-registry-staff-api
     extra_hosts:
       - "localhost:host-gateway"
@@ -77,7 +77,7 @@ services:
 
   farmer-registry-partner-api:
     profiles: [farmer-registry, full]
-    image: ${FARMER_REGISTRY_PARTNER_API_IMAGE:-openg2p/openg2p-farmer-registry-partner-api:1.2.0}
+    image: ${FARMER_REGISTRY_PARTNER_API_IMAGE:-openg2p/openg2p-farmer-registry-partner-api:1.2.1-rc.163}
     container_name: openg2p-farmer-registry-partner-api
     depends_on:
       postgres:
@@ -97,7 +97,7 @@ services:
 
   farmer-registry-celery-worker:
     profiles: [farmer-registry, full]
-    image: ${FARMER_REGISTRY_CELERY_IMAGE:-openg2p/openg2p-farmer-registry-celery:1.2.0}
+    image: ${FARMER_REGISTRY_CELERY_IMAGE:-openg2p/openg2p-farmer-registry-celery:1.2.1-rc.163}
     container_name: openg2p-farmer-registry-celery-worker
     depends_on:
       postgres:
@@ -118,7 +118,7 @@ services:
 
   farmer-registry-celery-beat:
     profiles: [farmer-registry, full]
-    image: ${FARMER_REGISTRY_CELERY_IMAGE:-openg2p/openg2p-farmer-registry-celery:1.2.0}
+    image: ${FARMER_REGISTRY_CELERY_IMAGE:-openg2p/openg2p-farmer-registry-celery:1.2.1-rc.163}
     container_name: openg2p-farmer-registry-celery-beat
     depends_on:
       postgres:
@@ -135,7 +135,7 @@ services:
 
   farmer-registry-staff-ui:
     profiles: [farmer-registry, full]
-    image: ${REGISTRY_STAFF_PORTAL_UI_IMAGE:-openg2p/openg2p-registry-staff-portal-ui:1.1.1}
+    image: ${REGISTRY_STAFF_PORTAL_UI_IMAGE:-openg2p/openg2p-registry-staff-ui:1.2.1}
     container_name: openg2p-farmer-registry-staff-ui
     extra_hosts:
       - "localhost:host-gateway"
@@ -155,7 +155,7 @@ services:
 
   nsr-master-data-api:
     profiles: [nsr-registry, full]
-    image: ${MASTER_DATA_API_IMAGE:-registry.gitlab.com/openg2p/master-data-service/master-data-api:0.0.0-develop.26}
+    image: ${MASTER_DATA_API_IMAGE:-openg2p/master-data-api:1.1.3}
     container_name: openg2p-nsr-master-data-api
     depends_on:
       postgres:
@@ -167,9 +167,9 @@ services:
     env_file:
       - ../generated/national-social-registry/docker/master-data-api.env
     environment:
-      GEN2_MASTER_DATA_API_HOST: "0.0.0.0"
-      GEN2_MASTER_DATA_API_PORT: "8000"
-      GEN2_MASTER_DATA_API_NO_OF_WORKERS: "2"
+      MASTER_DATA_API_HOST: "0.0.0.0"
+      MASTER_DATA_API_PORT: "8000"
+      MASTER_DATA_API_NO_OF_WORKERS: "2"
     ports:
       - "${NSR_MASTER_DATA_API_PORT:-8043}:8000"
     healthcheck:
@@ -280,7 +280,7 @@ services:
 
   nsr-registry-staff-ui:
     profiles: [nsr-registry, full]
-    image: ${REGISTRY_STAFF_PORTAL_UI_IMAGE:-openg2p/openg2p-registry-staff-portal-ui:1.1.1}
+    image: ${REGISTRY_STAFF_PORTAL_UI_IMAGE:-openg2p/openg2p-registry-staff-ui:1.2.1}
     container_name: openg2p-nsr-registry-staff-ui
     extra_hosts:
       - "localhost:host-gateway"
@@ -300,8 +300,10 @@ services:
 
   farmer-registry-db-seed:
     profiles: [farmer-registry-seed]
-    image: ${FARMER_REGISTRY_DB_SEED_IMAGE:-openg2p/openg2p-farmer-registry-db-seed:1.2.0}
+    image: ${FARMER_REGISTRY_DB_SEED_IMAGE:-openg2p/openg2p-farmer-registry-db-seed:1.2.1-rc.163}
     container_name: openg2p-farmer-registry-db-seed
+    extra_hosts:
+      - "localhost:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -337,12 +339,25 @@ services:
       MINIO_SECURE: "false"
       TEMPLATE_BUCKET_NAME: templates
       IMAGE_BUCKET_NAME: registrant-photos
+      # Sample data is seeded through the intake-form API (db-seed 1.2.x), which needs a
+      # Keycloak password-grant token. Issuer must match what the staff API validates, so
+      # use KEYCLOAK_URL (localhost) via the host-gateway mapping rather than keycloak:8080.
+      STAFF_API_URL: http://farmer-registry-staff-api:8000
+      KEYCLOAK_ISSUER_URL: ${KEYCLOAK_URL:-http://localhost:8080}/realms/${KEYCLOAK_REALM:-staff}
+      STAFF_CLIENT_ID: farmer-registry-staff-portal
+      INTAKE_SEED_PASSWORD: ${KEYCLOAK_AWE_APPROVER_PASSWORD:-pass}
+      KEYCLOAK_BASE_URL: ${KEYCLOAK_URL:-http://localhost:8080}
+      KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-staff}
     restart: "no"
 
   nsr-registry-db-seed:
     profiles: [nsr-registry-seed]
     image: ${NSR_REGISTRY_DB_SEED_IMAGE:-openg2p/openg2p-nsr-db-seed:1.0.1}
     container_name: openg2p-nsr-registry-db-seed
+    extra_hosts:
+      - "localhost:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -378,4 +393,15 @@ services:
       MINIO_SECURE: "false"
       TEMPLATE_BUCKET_NAME: templates
       IMAGE_BUCKET_NAME: registrant-photos
+      # Sample data is seeded through the intake-form API (db-seed 1.2.x), which needs a
+      # Keycloak password-grant token. Issuer must match what the staff API validates, so
+      # use KEYCLOAK_URL (localhost) via the host-gateway mapping rather than keycloak:8080.
+      STAFF_API_URL: http://nsr-registry-staff-api:8000
+      KEYCLOAK_ISSUER_URL: ${KEYCLOAK_URL:-http://localhost:8080}/realms/${KEYCLOAK_REALM:-staff}
+      STAFF_CLIENT_ID: nsr-registry-staff-portal
+      INTAKE_SEED_PASSWORD: ${KEYCLOAK_AWE_APPROVER_PASSWORD:-pass}
+      KEYCLOAK_BASE_URL: ${KEYCLOAK_URL:-http://localhost:8080}
+      KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-staff}
     restart: "no"
