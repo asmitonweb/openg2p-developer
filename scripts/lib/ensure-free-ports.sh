@@ -4,6 +4,15 @@
 
 _port_listening() {
   local port="$1"
+  # Git Bash / MSYS: Windows netstat has no -tln and prints its usage text instead,
+  # which the checks below would read as "nothing is listening" — leaving every port
+  # looking free and the auto-pick a no-op. Use the Windows syntax there.
+  case "$(uname -s 2>/dev/null)" in
+    MINGW* | MSYS* | CYGWIN*)
+      netstat -ano -p tcp 2>/dev/null         | awk '$1 == "TCP" && $4 == "LISTENING" { print $2 }'         | grep -Eq "(^|[.:])${port}$"
+      return $?
+      ;;
+  esac
   if command -v ss >/dev/null 2>&1; then
     ss -tlnH 2>/dev/null | awk '{print $4}' | grep -Eq "(^|[.:\\*])${port}$"
   elif command -v netstat >/dev/null 2>&1; then

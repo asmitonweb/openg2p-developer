@@ -8,6 +8,15 @@ services:
     profiles: [infra, commons, pbms, farmer-registry, nsr-registry, farmer-registry-seed, nsr-registry-seed, bridge, spar, full]
     image: postgres:16
     container_name: openg2p-postgres
+    # postgres:16 defaults to max_connections=100. The full stack (staff/partner APIs and
+    # master-data with multiple workers, celery worker + beat, IAM, AWE, id-generator) plus
+    # the db-seed exhausts that and the sample seed dies with "too many clients already".
+    command:
+      - postgres
+      - -c
+      - max_connections=300
+      - -c
+      - shared_buffers=256MB
     environment:
       POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}

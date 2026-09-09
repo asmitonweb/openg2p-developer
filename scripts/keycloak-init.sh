@@ -86,6 +86,14 @@ ensure_realm() {
     -s bruteForceProtected=false
 }
 
+# Applied on every run (ensure_realm returns early for an existing realm). Keycloak's
+# 5-minute default access-token lifespan expires mid-run during the sample seed, which
+# submits 25 households one at a time and fails with "Access token expired".
+ensure_realm_token_lifespans() {
+  echo "[keycloak-init] Setting realm token lifespans (dev) ..."
+  "${KCADM}" update "realms/${KEYCLOAK_REALM}"     -s accessTokenLifespan=1800     -s ssoSessionIdleTimeout=7200     -s ssoSessionMaxLifespan=36000 >/dev/null
+}
+
 client_internal_id() {
   local client_id="$1"
   "${KCADM}" get clients -r "${KEYCLOAK_REALM}" -q "clientId=${client_id}" --fields id 2>/dev/null \
@@ -246,6 +254,7 @@ echo "[keycloak-init] Waiting for Keycloak at ${KEYCLOAK_URL} ..."
 wait_for_keycloak
 kc_login
 ensure_realm
+ensure_realm_token_lifespans
 
 echo "[keycloak-init] Ensuring OIDC clients in realm '${KEYCLOAK_REALM}' ..."
 

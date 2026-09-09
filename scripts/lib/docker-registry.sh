@@ -180,6 +180,25 @@ SQL
   echo "  ${reg_db} and ${md_db} recreated."
 }
 
+# Reset the shared AWE database so approval policies/stages are re-seeded from scratch.
+# Kept volumes otherwise leave stale stages behind: the db-seed only adds stages that are
+# missing, so an old "Stage 1" keeps its previous approver and the sample seed fails with
+# AWE-008 "Task is not assigned to you". Must run before AWE starts so it migrates fresh.
+docker_registry_reset_awe_db() {
+  echo "Resetting awe database for clean policy seed ..."
+  docker_registry_compose "${COMPOSE_FILES[@]}" --profile infra exec -T postgres     psql -U "${POSTGRES_SUPERUSER}" -v ON_ERROR_STOP=1 <<SQL
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE datname = 'awe'
+  AND pid <> pg_backend_pid();
+DROP DATABASE IF EXISTS awe;
+CREATE DATABASE awe OWNER postgres;
+\c awe
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+SQL
+  echo "  awe recreated."
+}
+
 docker_registry_container_publishes() {
   local name="$1"
   local port="$2"
@@ -196,6 +215,52 @@ docker_registry_start_infra() {
     up keycloak-init --abort-on-container-exit || true
 }
 
+# start_commons re-runs the infra profile, which recreates keycloak-init and lets it run
+# detached. The sample seed logs in as the AWE approvers (alex.carter / nina.patel), so the
+# realm must be fully provisioned first — otherwise the password grant fails with 401.
+docker_registry_wait_keycloak_init() {
+  local name="openg2p-keycloak-init"
+  local i state
+  echo "Waiting for Keycloak realm provisioning ..."
+  for i in $(seq 1 120); do
+    state="$(docker inspect -f '{{.State.Status}}' "$name" 2>/dev/null || echo missing)"
+    case "$state" in
+      exited)
+        echo "  Keycloak realm provisioning complete."
+        return 0
+        ;;
+      missing)
+        echo "  ${name} not present — skipping wait."
+        return 0
+        ;;
+    esac
+    sleep 5
+  done
+  echo "  WARNING: ${name} still running; continuing anyway." >&2
+}
+
+# The sample seed logs in as the AWE approvers with a Keycloak password grant. Waiting on
+# the keycloak-init container's state is racy (compose recreates it, so an old "exited"
+# instance can be observed), so verify the thing the seed actually needs: a working grant.
+docker_registry_wait_awe_approver_login() {
+  local client_id="$1"
+  local user="${2:-alex.carter}"
+  local pass="${KEYCLOAK_AWE_APPROVER_PASSWORD:-pass}"
+  local url="${KEYCLOAK_URL:-http://localhost:8080}/realms/${KEYCLOAK_REALM:-staff}/protocol/openid-connect/token"
+  local i code
+
+  echo "Waiting for AWE approver login (${user}) ..."
+  for i in $(seq 1 90); do
+    code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$url"       -d grant_type=password -d "client_id=${client_id}"       -d "username=${user}" -d "password=${pass}" 2>/dev/null || echo 000)"
+    if [[ "$code" == "200" ]]; then
+      echo "  AWE approver login ready."
+      return 0
+    fi
+    sleep 5
+  done
+  echo "  WARNING: ${user} still cannot log in (last HTTP ${code}); seeding may fail." >&2
+}
+
 docker_registry_start_commons() {
   echo "Starting commons (IAM + AWE + Staff Portal hub) ..."
   docker_registry_compose "${COMPOSE_FILES[@]}" \
@@ -204,6 +269,7 @@ docker_registry_start_commons() {
   docker_registry_wait_http "http://localhost:${IAM_STAFF_PORT}/ping" "IAM staff API"
   docker_registry_wait_http "http://localhost:${AWE_API_PORT}/v1/awe/health" "AWE API"
   docker_registry_wait_staff_portal_hub
+  docker_registry_wait_keycloak_init
 }
 
 docker_registry_seed_awe_callback() {
@@ -241,11 +307,27 @@ docker_registry_register_iam_apps() {
     return 1
   fi
 
+  local scripts_src="${ROOT_DIR}/scripts"
+  local payload_src="$payload_file"
+  local iam_env_src="${ROOT_DIR}/generated/iam/docker/staff-portal-api.env"
+
+  # Git Bash / MSYS rewrites arguments that look like absolute POSIX paths into Windows
+  # paths, which turned the container-side /opt/... arguments into C:/Program Files/Git/opt/...
+  # Disable that conversion for this command and hand Docker Windows-style host paths.
+  case "$(uname -s 2>/dev/null)" in
+    MINGW* | MSYS* | CYGWIN*)
+      scripts_src="$(cygpath -m "$scripts_src")"
+      payload_src="$(cygpath -m "$payload_src")"
+      iam_env_src="$(cygpath -m "$iam_env_src")"
+      export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
+      ;;
+  esac
+
   echo "Registering IAM staff portal application(s) ..."
   docker_registry_compose "${COMPOSE_FILES[@]}" --profile commons run --rm --no-deps \
-    -v "${ROOT_DIR}/scripts:/opt/openg2p-scripts:ro" \
-    -v "${payload_file}:/opt/registry_registration_payload.json:ro" \
-    -v "${ROOT_DIR}/generated/iam/docker/staff-portal-api.env:/opt/iam.env:ro" \
+    -v "${scripts_src}:/opt/openg2p-scripts:ro" \
+    -v "${payload_src}:/opt/registry_registration_payload.json:ro" \
+    -v "${iam_env_src}:/opt/iam.env:ro" \
     -e IAM_STAFF_ENV_FILE=/opt/iam.env \
     -e REGISTRY_IAM_PAYLOAD=/opt/registry_registration_payload.json \
     -e REGISTRY_IAM_VARIANTS="${variants_json}" \
@@ -254,8 +336,21 @@ docker_registry_register_iam_apps() {
     /opt/openg2p-scripts/lib/iam_register_registry_apps.py
 }
 
+docker_registry_migrate_master_data() {
+  # master-data-api does not migrate its own schema at startup, and the variant
+  # master-data DB is dropped/recreated on every up — without this the db-seed
+  # geo load fails with: relation "g2p_geo_levels" does not exist.
+  local profile="$1"
+  local service="$2"
+
+  echo "Migrating Master Data schema (${service}) ..."
+  ( export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
+    docker_registry_compose "${COMPOSE_FILES[@]}" --profile "${profile}"       run --rm --no-deps --entrypoint python "${service}"       -m openg2p_gen2_master_data.main migrate >/dev/null )
+  echo "  Master Data schema ready."
+}
+
 docker_registry_variant_meta() {
-  # Sets: profile seed_profile staff_port partner_port ui_port label seed_service mnemonic master_data_port
+  # Sets: profile seed_profile staff_port partner_port ui_port label seed_service mnemonic master_data_port master_data_service
   local variant="$1"
   case "$variant" in
     farmer)
@@ -265,6 +360,7 @@ docker_registry_variant_meta() {
       partner_port="${FARMER_REGISTRY_PARTNER_API_PORT}"
       ui_port="${FARMER_REGISTRY_UI_PORT}"
       master_data_port="${MASTER_DATA_API_PORT}"
+      master_data_service="farmer-master-data-api"
       label="Farmer Registry"
       seed_service="farmer-registry-db-seed"
       mnemonic="farmer-registry-staff-portal"
@@ -276,6 +372,7 @@ docker_registry_variant_meta() {
       partner_port="${NSR_REGISTRY_PARTNER_API_PORT}"
       ui_port="${NSR_REGISTRY_UI_PORT}"
       master_data_port="${NSR_MASTER_DATA_API_PORT}"
+      master_data_service="nsr-master-data-api"
       label="National Social Registry"
       seed_service="nsr-registry-db-seed"
       mnemonic="nsr-registry-staff-portal"
@@ -363,7 +460,7 @@ docker_registry_wait_staff_portal_hub() {
 # Optional: RESET_DBS=1 to drop/recreate variant DBs and recreate apps (migrate) first.
 docker_registry_continue_variant() {
   local variant="$1"
-  local profile seed_profile staff_port partner_port ui_port label seed_service mnemonic master_data_port
+  local profile seed_profile staff_port partner_port ui_port label seed_service mnemonic master_data_port master_data_service
   local recreate_flag=()
 
   docker_registry_variant_meta "$variant"
@@ -397,6 +494,7 @@ docker_registry_continue_variant() {
   fi
 
   docker_registry_wait_http "http://localhost:${master_data_port}/ping" "Master Data API" 90
+  docker_registry_migrate_master_data "${profile}" "${master_data_service}"
   docker_registry_wait_http "http://localhost:${staff_port}/ping" "${label} staff API" 90
 
   local variants_json
@@ -409,6 +507,7 @@ print(json.dumps([
 PY
   )"
   docker_registry_register_iam_apps "${variants_json}"
+  docker_registry_wait_awe_approver_login "$mnemonic"
   docker_registry_seed_variant "$seed_profile" "$seed_service" "$label"
   docker_registry_print_urls "$label" "$ui_port" "$staff_port" "$partner_port" "$master_data_port"
 }
@@ -429,7 +528,7 @@ docker_registry_down_all() {
 # VARIANT=farmer|nsr
 docker_registry_up_variant() {
   local variant="$1"
-  local profile seed_profile staff_port partner_port ui_port label seed_service mnemonic master_data_port
+  local profile seed_profile staff_port partner_port ui_port label seed_service mnemonic master_data_port master_data_service
 
   docker_registry_variant_meta "$variant"
 
@@ -446,6 +545,7 @@ docker_registry_up_variant() {
   bash "${ROOT_DIR}/scripts/generate-docker-config.sh"
 
   docker_registry_start_infra
+  docker_registry_reset_awe_db
   docker_registry_start_commons
   docker_registry_seed_awe_callback
   docker_registry_reset_variant_dbs "$variant"
@@ -459,6 +559,7 @@ docker_registry_up_variant() {
     up -d --remove-orphans --force-recreate
 
   docker_registry_wait_http "http://localhost:${master_data_port}/ping" "Master Data API" 90
+  docker_registry_migrate_master_data "${profile}" "${master_data_service}"
   docker_registry_wait_http "http://localhost:${staff_port}/ping" "${label} staff API" 90
 
   local variants_json
@@ -471,6 +572,7 @@ print(json.dumps([
 PY
   )"
   docker_registry_register_iam_apps "${variants_json}"
+  docker_registry_wait_awe_approver_login "$mnemonic"
   docker_registry_seed_variant "$seed_profile" "$seed_service" "$label"
   docker_registry_print_urls "$label" "$ui_port" "$staff_port" "$partner_port" "$master_data_port"
 }
