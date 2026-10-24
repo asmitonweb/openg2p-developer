@@ -29,7 +29,7 @@ echo
 echo "${LABEL} URLs:"
 echo "  Staff UI : http://localhost:$(source "${GENERATED_DIR}/staff-portal-ui.env" && echo "${PORT}")"
 echo "  Staff API: http://localhost:$(source "${GENERATED_DIR}/staff-portal-api.env" && echo "${REGISTRY_STAFF_PORTAL_API_APP_PORT}")/docs"
-echo "  Master Data: http://localhost:$(source "${GENERATED_DIR}/master-data-api.env" && echo "${GEN2_MASTER_DATA_API_PORT}")/docs"
+echo "  Master Data: http://localhost:$(source "${GENERATED_DIR}/master-data-api.env" && echo "${MASTER_DATA_API_PORT}")/docs"
 echo "  IAM API  : http://localhost:${IAM_STAFF_PORT:-8020}"
 echo "  AWE API  : http://localhost:${AWE_API_PORT:-8030}/v1/awe/health"
 echo "  AWE Admin: http://localhost:${AWE_UI_PORT:-8031}/"

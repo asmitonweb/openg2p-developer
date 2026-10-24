@@ -189,9 +189,27 @@ registry_variant_run_sql_tree() {
   python_bin="$(ensure_psycopg2_python "$(registry_variant_root)")"
 
   echo "[seed] Applying ${label} from ${dir} ..."
+  # lookup-data/ seeds g2p_attributes + g2p_attribute_values, which live in the
+  # Master Data database, not the registry database. Everything else in the
+  # meta_data tree targets the registry DB.
+  registry_variant_export_master_psql
+  local rel patched_sql
   while IFS= read -r sql_file; do
-    echo "[seed]   -> ${sql_file#${dir}/}"
-    "$python_bin" "$apply_script" "$sql_file"
+    rel="${sql_file#${dir}/}"
+    echo "[seed]   -> ${rel}"
+    if [[ "$rel" == lookup-data/* ]]; then
+      # farmer-registry@1.3 seeds "ON CONFLICT (value_id)", but master-data-service
+      # made the g2p_attribute_values primary key the composite
+      # (value_id, attribute_id). The INSERT already supplies both columns, so
+      # widening the conflict target preserves the intended insert-if-absent
+      # semantics. Drop this rewrite once the two repos agree on the key.
+      patched_sql="$(mktemp)"
+      sed 's/ON CONFLICT (value_id) DO NOTHING/ON CONFLICT (value_id, attribute_id) DO NOTHING/' "$sql_file" > "$patched_sql"
+      env PGHOST="$MD_PGHOST" PGPORT="$MD_PGPORT" PGUSER="$MD_PGUSER" PGPASSWORD="$MD_PGPASSWORD" PGDATABASE="$MD_PGDATABASE" "$python_bin" "$apply_script" "$patched_sql"
+      rm -f "$patched_sql"
+    else
+      "$python_bin" "$apply_script" "$sql_file"
+    fi
   done <<< "$sql_files"
 }
 

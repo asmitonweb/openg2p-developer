@@ -89,7 +89,7 @@ if [[ -f "$MASTER_DATA_ENV" && -x "${MASTER_DATA_API_DIR}/venv/bin/python" ]]; t
   # Prefer package ASGI path — fastapi-common "run" with worker_type=uvicorn
   # looks for repo-root main:app, which this service does not ship.
   run_service "${VARIANT}-master-data-api" "$MASTER_DATA_API_DIR" "$MASTER_DATA_ENV" \
-    bash -c 'exec uvicorn openg2p_gen2_master_data.main:app --host "${GEN2_MASTER_DATA_API_HOST:-0.0.0.0}" --port "${GEN2_MASTER_DATA_API_PORT:-${UVICORN_PORT}}" --log-level info'
+    bash -c 'exec uvicorn openg2p_gen2_master_data.main:app --host "${MASTER_DATA_API_HOST:-0.0.0.0}" --port "${MASTER_DATA_API_PORT:-${UVICORN_PORT}}" --log-level info'
 fi
 
 run_service "${VARIANT}-staff-api" "$API_DIR" "${GENERATED_DIR}/staff-portal-api.env" \

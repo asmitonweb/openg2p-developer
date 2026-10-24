@@ -13,7 +13,12 @@ pbms_bg_tasks_load_env() {
   OPENG2P_WORKSPACE="${OPENG2P_WORKSPACE:-../openg2p-workspace}"
   OPENG2P_WORKSPACE="$(cd "$PBMS_DEV_ROOT" && cd "$OPENG2P_WORKSPACE" && pwd)"
   PBMS_PATH="${PBMS_PATH:-${OPENG2P_WORKSPACE}/pbms}"
-  PBMS_PATH="$(cd "$PBMS_DEV_ROOT" && cd "$PBMS_PATH" && pwd)"
+  # The PBMS repo is absent for registry-only clone profiles. Keep the unresolved
+  # path rather than failing, so profile-agnostic callers (free-native-stack)
+  # still work; anything that actually needs PBMS checks for the directory.
+  if [[ -d "$PBMS_PATH" ]]; then
+    PBMS_PATH="$(cd "$PBMS_DEV_ROOT" && cd "$PBMS_PATH" && pwd)"
+  fi
   GENERATED_DIR="${PBMS_DEV_ROOT}/generated/pbms"
 
   PBMS_DB_NAME="${PBMS_DB_NAME:-pbmsdb}"
