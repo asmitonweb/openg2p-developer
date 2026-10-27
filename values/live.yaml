@@ -21,3 +21,12 @@ registry:
     loadTemplates: true
   sanity:
     enabled: false
+
+# Dashboard API (component live-dashboard-api switches dashboardApi.enabled on). Tokens come from the
+# local Keycloak; the issuer is the browser-facing URL, which the gateway also answers inside the network.
+dashboardApi:
+  auth:
+    enabled: true
+    issuer: http://keycloak.openg2p.localtest.me/realms/staff
+    audience: livestock-registry-dashboard-api
+    role: charts:read

@@ -37,3 +37,12 @@ analytics:
     enabled: false
   reportingViews:
     enabled: true
+
+# Dashboard API (component farmer-dashboard-api switches dashboardApi.enabled on). This chart version
+# has no typed auth block; the image reads these variables (same contract as the crop and livestock charts).
+dashboardApi:
+  env:
+    AUTH_ENABLED: "true"
+    AUTH_ISSUER: http://keycloak.openg2p.localtest.me/realms/staff
+    AUTH_AUDIENCE: farmer-registry-dashboard-api
+    AUTH_ROLE: charts:read
