@@ -57,7 +57,7 @@ the file disappears and the note stops appearing.
 ## Developing against a registry
 
 ```bash
-./oan.sh dev farmer                                  # clones oan-workspace/farmer-registry, builds, starts
+./oan.sh dev farmer                                  # adds farmer to the selection, builds from oan-workspace/, starts
 # edit oan-workspace/farmer-registry/oan-extension/...
 ./oan.sh reload farmer db-seed && ./oan.sh rerun farmer-registry-db-seed    # metadata / seed
 ./oan.sh reload farmer staff-api                     # rebuild + restart the staff API
