@@ -13,6 +13,9 @@ global:
 # Ethiopia's hierarchy from the ETH-OAN pack (ghcr.io/asmitonweb/master-data-db-seed) and the
 # agriculture code lists; keep that, and expose the public catalogue for dashboards.
 master-data:
+  # The dev cluster was seeded by hand and ships the job disabled; a fresh laptop needs it.
+  geoSeed:
+    enabled: true
   masterDataAPI:
     catalogue:
       public:
