@@ -38,7 +38,7 @@ picks up a moved `latest` only when asked: `./oan.sh pull` refreshes the selecte
 ## GHCR (default) with build fallback
 
 `OAN_IMAGE_SOURCE=ghcr` (the default) makes `gen.py` write `ghcr.io/asmitonweb/<product>/<role>:latest`.
-`oan.sh up` pulls what is missing with `docker compose pull` (progress per layer); an image that is
+`oan.sh up` pulls what is missing with `docker compose pull` (compose shows the layer progress); an image that is
 not published yet is built from source with `scripts/build.sh` and tagged with the published name,
 so the compose files never change and a later pull replaces it.
 

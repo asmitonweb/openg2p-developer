@@ -3,7 +3,9 @@
 Mapping:
 - Deployment / StatefulSet -> long-running service (extra containers share its
   network namespace, as in a pod).
-- Job -> one-shot service restarted on failure up to its backoffLimit.
+- Job -> one-shot service restarted on failure up to its backoffLimit; post-install hooks depend
+  on the release's workloads and on lower-weight hooks, and get at least 15 attempts.
+- CronJob -> a service running the job's command in a sleep loop at the schedule's interval.
 - init container -> one-shot service the pod's main container waits for.
 - Service -> network aliases (short name, .ns, .ns.svc, .ns.svc.cluster.local).
   They sit on the backing container when every Service port equals its
@@ -28,6 +30,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import shutil
 import sys
 from collections import defaultdict
@@ -39,6 +42,10 @@ HERE = Path(__file__).resolve().parent.parent  # repo root
 OUT = HERE / "out"
 FILES = OUT / "files"
 STATE = HERE / "state" / "secrets.json"
+# Only token-like Secret values are pinned there (generated passwords, keys, base64 blobs).
+# URLs, JSON and PEM blocks are configuration: the chart's value is taken on every render.
+PINNABLE = re.compile(r"[A-Za-z0-9+/=_-]+")
+CRON_LABEL = "openg2p.local/cron"
 
 NETWORK = "openg2p"  # external, shared by every namespace project; stack.sh creates it
 VOLUME_PREFIX = "openg2p_"  # pinned so moving a service between projects keeps its data
@@ -143,10 +150,15 @@ class Store:
                 data |= {k: str(v).encode() for k, v in (d.get("stringData") or {}).items()}
                 pinned = self.state.setdefault(f"{key[0]}/{key[1]}", {})
                 for k, v in data.items():
-                    if k in pinned:
+                    text = v.decode("latin-1")
+                    if pinned.get(k) and PINNABLE.fullmatch(pinned[k]):
                         data[k] = pinned[k].encode("latin-1")
-                    else:
-                        pinned[k] = v.decode("latin-1")
+                    elif PINNABLE.fullmatch(text):
+                        pinned[k] = text
+                    else:  # configuration or empty: never pinned, follows the chart (and extras/) each render
+                        pinned.pop(k, None)
+                if not pinned:
+                    self.state.pop(f"{key[0]}/{key[1]}", None)
                 self.secrets[key] = data
 
     def secret(self, ns: str, name: str, key: str, optional: bool) -> str | None:
@@ -202,6 +214,42 @@ def expand(s: str, env: dict[str, str]) -> str:
 
 def pod_spec(d: dict) -> dict:
     return d["spec"]["template"]["spec"]
+
+
+def cron_interval(schedule: str) -> int:
+    """Seconds between runs for the schedule shapes the charts use; anything else runs hourly."""
+    f = schedule.split()
+    if len(f) == 5:
+        m = re.fullmatch(r"\*/(\d+)", f[0])
+        if m and f[1] == "*":
+            return int(m[1]) * 60
+        if f[0].isdigit() and f[1] == "*":
+            return 3600
+        if f[0].isdigit() and f[1].isdigit() and f[2] == "*":
+            return 86400
+    return 3600
+
+
+def cron_as_job(d: dict, skipped: list[str]) -> dict | None:
+    """A CronJob becomes a long-running service that runs the job's command in a sleep loop.
+
+    Compose has no scheduler, and the charts use CronJobs to refresh the materialized reporting
+    views the dashboards read. Only possible when the container names its command: the image's
+    own entrypoint is not known here, so such a CronJob is skipped and listed in the report."""
+    name = d["metadata"]["name"]
+    spec = d["spec"]["jobTemplate"]["spec"]
+    containers = spec["template"]["spec"].get("containers") or []
+    if len(containers) != 1 or not containers[0].get("command"):
+        skipped.append(f"CronJob {name} (no explicit command)")
+        return None
+    c = containers[0]
+    every = cron_interval(str(d["spec"].get("schedule", "")))
+    run = shlex.join([str(x) for x in list(c["command"]) + list(c.get("args") or [])])
+    c["command"] = ["sh", "-c", f'while :; do {run} || echo "run failed; next in {every}s" >&2; sleep {every}; done']
+    c.pop("args", None)
+    job = {"kind": "Job", "metadata": dict(d["metadata"]), "spec": spec}
+    job["metadata"]["annotations"] = {**(d["metadata"].get("annotations") or {}), CRON_LABEL: str(every)}
+    return job
 
 
 def pod_name(d: dict) -> str:
@@ -446,7 +494,13 @@ def main(argv: list[str]) -> None:
     skipped: list[str] = []
     profiles: dict[str, list[str]] = defaultdict(list)
 
+    hook_jobs: list[tuple[str, str, str, float]] = []  # (service, ns, release instance, weight) of post-install hooks
+    workloads: list[tuple[str, str, str]] = []  # (service, ns, release instance) of long-running workloads
     for d in docs:
+        if d["kind"] == "CronJob":
+            d = cron_as_job(d, skipped)
+            if d is None:
+                continue
         kind, name, ns = d["kind"], d["metadata"]["name"], d["metadata"]["namespace"]
         if kind not in WORKLOADS or (kind == "Job" and SKIP_JOBS.search(name)):
             if kind in ("CronJob", "Pod", "DaemonSet", "Job"):
@@ -457,6 +511,9 @@ def main(argv: list[str]) -> None:
         spec = pod_spec(d)
         vols = pod_volumes(d, ns, pod, store, named)
         hook = (d["metadata"].get("annotations") or {}).get("helm.sh/hook", "")
+        post_hook = kind == "Job" and "post-install" in hook
+        weight = float((d["metadata"].get("annotations") or {}).get("helm.sh/hook-weight", 0) or 0)
+        instance = (d["metadata"].get("labels") or {}).get("app.kubernetes.io/instance", "")
 
         inits = []
         for i, c in enumerate(spec.get("initContainers") or []):
@@ -473,10 +530,18 @@ def main(argv: list[str]) -> None:
         for i, c in enumerate(spec.get("containers") or []):
             sname = name if i == 0 else f"{name}--{c['name']}"
             s = container_service(c, spec, ns, pod, store, vols, profile)
-            if kind == "Job":
+            if kind == "Job" and CRON_LABEL in (d["metadata"].get("annotations") or {}):
+                s["restart"] = "unless-stopped"
+                s["labels"] = {"openg2p.local/kind": "cronjob"}
+            elif kind == "Job":
                 retries = d["spec"].get("backoffLimit", 6)  # Docker reads on-failure:0 as unlimited
+                if post_hook:  # Helm ran these after the release was up; here the services they call may still be starting
+                    retries = max(retries, 15)
                 s["restart"] = f"on-failure:{retries}" if retries else "no"
-                s["labels"] = {"openg2p.local/kind": "job", **({"openg2p.local/hook": hook} if hook else {})}
+                s["labels"] = {"openg2p.local/kind": "job", **({"openg2p.local/hook": hook} if hook else {}),
+                               **({"openg2p.local/hook-weight": str(weight)} if post_hook else {})}
+                if post_hook and i == 0:
+                    hook_jobs.append((name, ns, instance, weight))
             else:
                 s["restart"] = "unless-stopped"
                 s["labels"] = {"openg2p.local/kind": kind.lower()}
@@ -495,6 +560,29 @@ def main(argv: list[str]) -> None:
         add_fsgroup_init(name, spec, profile, inits, services)
         if kind != "Job":
             pods.append((d, name))
+            workloads.append((name, ns, instance))
+
+    # Helm starts post-install hooks after the release's workloads, in weight order; Compose starts
+    # everything at once. Same-project dependencies restore that order (stack.sh starts the hooks
+    # last as well; dependencies on other projects, such as IAM, are covered by the extra retries).
+    def release_of(name: str, ns: str, inst: str) -> str:
+        """Charts that forget the instance label still prefix objects with the release name."""
+        if inst:
+            return inst
+        known = {i for n, s, i in workloads if s == ns and i} | {i for n, s, i, w in hook_jobs if s == ns and i}
+        return max((i for i in known if name.startswith(i + "-")), key=len, default="")
+
+    for name, ns, inst, w in hook_jobs:
+        inst = release_of(name, ns, inst)
+        deps = dict(services[name].get("depends_on") or {})
+        for n2, ns2, inst2 in workloads:
+            if ns2 == ns and inst2 == inst:
+                deps[n2] = {"condition": "service_started"}
+        for n2, ns2, inst2, w2 in hook_jobs:
+            if ns2 == ns and release_of(n2, ns2, inst2) == inst and w2 < w:
+                deps[n2] = {"condition": "service_completed_successfully"}
+        if deps:
+            services[name]["depends_on"] = deps
 
     # Service -> aliases / gateway / forwarders
     gateway_http: dict[int, list[tuple[list[str], str, int]]] = defaultdict(list)
@@ -779,13 +867,14 @@ def report(services: dict, profiles: dict, skipped: list[str], store: Store, rou
     lines += ["", "## Remapped images (private registry -> local/GHCR)", ""] + [f"- `{a}` -> `{b}`" for a, b in sorted(remapped_images.items())]
     lines += ["", "## Warnings", ""] + [f"- {w}" for w in sorted(set(warnings))]
     (OUT / "REPORT.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    # namespace, profile, service, kind: stack.sh reads this to order releases and skip finished jobs.
+    # namespace, profile, service, kind, post-install hook weight ("-" for everything else):
+    # stack.sh reads this to order releases, skip finished jobs and start the hooks last.
     rows = sorted(
-        (s[NS], p, name, (s.get("labels") or {}).get("openg2p.local/kind", ""))
+        (s[NS], p, name, (s.get("labels") or {}).get("openg2p.local/kind", ""), (s.get("labels") or {}).get("openg2p.local/hook-weight", "-"))
         for name, s in services.items()
         for p in s.get("profiles") or ["-"]
     )
-    (OUT / "services.tsv").write_text("".join(f"{ns}\t{p}\t{n}\t{k}\n" for ns, p, n, k in rows), encoding="utf-8", newline="\n")
+    (OUT / "services.tsv").write_text("".join(f"{ns}\t{p}\t{n}\t{k}\t{w}\n" for ns, p, n, k, w in rows), encoding="utf-8", newline="\n")
     print(f"{len(services)} services, {len(by_profile)} profiles, {len(set(warnings))} warnings -> out/<namespace>/compose.yaml, out/REPORT.md")
 
 

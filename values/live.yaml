@@ -30,3 +30,9 @@ dashboardApi:
     issuer: http://keycloak.openg2p.localtest.me/realms/staff
     audience: livestock-registry-dashboard-api
     role: charts:read
+
+# The dashboard API reads the materialized reporting views; the chart leaves them off by default.
+# Their refresh CronJob runs locally as a loop service (<release>-*-reporting-views-refresh).
+reporting:
+  views:
+    enabled: true

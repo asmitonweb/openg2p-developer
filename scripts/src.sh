@@ -19,7 +19,8 @@ set -euo pipefail
 export MSYS_NO_PATHCONV=1
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-[ -f .env ] && set -a && . ./.env && set +a
+# shellcheck disable=SC1091
+source scripts/env.sh
 # shellcheck disable=SC1091
 source scripts/components.sh
 # shellcheck disable=SC1091
@@ -28,10 +29,16 @@ ORG=https://github.com/Centre-for-Open-Societal-Systems
 BRANCH="${OAN_SRC_REF:-develop}"
 WORKSPACE="${OAN_SRC_DIR:-oan-workspace}"
 
-src_dir() {  # src_dir <id>  -> path of the checkout (may not exist yet)
-  local var
+src_dir() {  # src_dir <id>  -> absolute path of the checkout (may not exist yet)
+  # OAN_<ID>_SRC (component id) or OAN_<REPO>_SRC (repository; consent-manager and the partner
+  # portal share one) point at a checkout of your own instead of the workspace folder.
+  local repo var rvar p
+  repo=$(comp_field "$1" 7)
   var="OAN_$(tr '[:lower:]-' '[:upper:]_' <<<"$1")_SRC"
-  printf '%s' "${!var:-$WORKSPACE/$(comp_field "$1" 7)}"
+  rvar="OAN_$(tr '[:lower:]-' '[:upper:]_' <<<"$repo")_SRC"
+  p="${!var:-${!rvar:-$WORKSPACE/$repo}}"
+  case "$p" in /*|[A-Za-z]:*) ;; *) p="$ROOT/$p" ;; esac
+  printf '%s' "$p"
 }
 g() { git -C "$SRC" "$@"; }
 
@@ -42,7 +49,7 @@ clone() {
     repo=$(comp_field "$id" 7); [ "$repo" != - ] || continue
     SRC=$(src_dir "$id")
     case "$seen" in *" $SRC "*) continue ;; esac; seen+="$SRC "   # consent-manager and the partner portal share a repository
-    if [ -d "$SRC/.git" ]; then note "$repo: $SRC ($(g rev-parse --abbrev-ref HEAD))"; continue; fi
+    if [ -e "$SRC/.git" ]; then note "$repo: $SRC ($(g rev-parse --abbrev-ref HEAD))"; continue; fi
     note "cloning $ORG/$repo ($BRANCH) into $SRC"
     mkdir -p "$(dirname "$SRC")"
     git -c core.autocrlf=false clone -q --branch "$BRANCH" "$ORG/$repo.git" "$SRC"
@@ -58,7 +65,7 @@ status() {
     [ "$(comp_field "$id" 7)" != - ] || continue
     SRC=$(src_dir "$id")
     case "$seen" in *" $SRC "*) continue ;; esac; seen+="$SRC "
-    if [ ! -d "$SRC/.git" ]; then printf '%-22s no checkout (%s)\n' "$id" "$SRC"; continue; fi
+    if [ ! -e "$SRC/.git" ]; then printf '%-22s no checkout (%s)\n' "$id" "$SRC"; continue; fi
     br=$(g rev-parse --abbrev-ref HEAD)
     g fetch -q --no-tags origin "$BRANCH" 2>/dev/null || true
     ab=$(g rev-list --left-right --count "origin/$BRANCH...HEAD" 2>/dev/null | awk '{printf "behind %s, ahead %s", $1, $2}')
@@ -69,7 +76,7 @@ status() {
 cmd="${1:-help}"; shift || true
 case "$cmd" in
   clone) for id in "$@"; do comp_field "$id" 1 >/dev/null; done; clone "$@" ;;
-  status) status "$@" ;;
+  status) for id in "$@"; do comp_field "$id" 1 >/dev/null; done; status "$@" ;;
   dir) [ -n "${1:-}" ] || { echo "usage: src.sh dir <component>" >&2; exit 1; }; comp_field "$1" 1 >/dev/null; src_dir "$1"; echo ;;
-  *) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac

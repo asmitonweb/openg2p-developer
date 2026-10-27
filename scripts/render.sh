@@ -18,7 +18,8 @@ set -euo pipefail
 export MSYS_NO_PATHCONV=1
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-[ -f .env ] && set -a && . ./.env && set +a
+# shellcheck disable=SC1091
+source scripts/env.sh
 # shellcheck disable=SC1091
 source versions.env
 # shellcheck disable=SC1091
@@ -44,7 +45,7 @@ ensure_tools() {
 fetch() {  # fetch <repo-url> <chart> <version>  -> prints the extracted chart dir
   local name="$2-$3" dir="$CACHE/$2-$3"
   if [ ! -d "$dir/$2" ]; then
-    [ -f "$CACHE/$name.tgz" ] || curl -fsSL --retry 3 -o "$CACHE/$name.tgz" "$1/$name.tgz"
+    [ -f "$CACHE/$name.tgz" ] || { curl -fsSL --retry 3 -o "$CACHE/$name.tgz.part" "$1/$name.tgz" && mv "$CACHE/$name.tgz.part" "$CACHE/$name.tgz"; }
     mkdir -p "$dir" && tar -xzf "$CACHE/$name.tgz" -C "$dir"
   fi
   echo "$dir/$2"
@@ -84,8 +85,13 @@ render() {  # render <release> <chartdir> <namespace> <values-name> [helm flags.
   ok "$release ($(basename "$chart"))${*:+ $*} -> rendered/$values.yaml"
 }
 
-mapfile -t targets < <(comp_closure "${@:-$(selected_components)}")
+if [ $# -gt 0 ]; then mapfile -t targets < <(comp_closure "$@"); else mapfile -t targets < <(comp_closure $(selected_components)); fi
 step "Render: ${targets[*]}"
+# rendered/ and out/ are rewritten in place: two renders at once corrupt them
+LOCK="$ROOT/.cache/render.lock"
+mkdir -p "$ROOT/.cache"
+mkdir "$LOCK" 2>/dev/null || { fail "another render is running (if not, remove $LOCK)"; exit 1; }
+trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 ensure_tools
 
 base=$(fetch "$OPENG2P_HELM_REPO" openg2p-commons-base "$COMMONS_BASE_VERSION")

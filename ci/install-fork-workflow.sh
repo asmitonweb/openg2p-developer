@@ -24,7 +24,11 @@ install() {  # install <repo> <product> <branch> <role=dockerfile:context>...
   local repo="$1" product="$2" branch="$3"; shift 3
   local me fork wf matrix spec role df ctx
   me=$(gh api user --jq .login); fork="$me/$repo"
-  gh repo view "$fork" >/dev/null 2>&1 || { echo "forking $ORG/$repo"; gh repo fork "$ORG/$repo" --clone=false >/dev/null; sleep 5; }
+  if ! gh repo view "$fork" >/dev/null 2>&1; then
+    echo "forking $ORG/$repo"; gh repo fork "$ORG/$repo" --clone=false >/dev/null
+    for _ in 1 2 3 4 5 6; do gh repo view "$fork" >/dev/null 2>&1 && break; sleep 5; done
+  fi
+  [ "$(gh api "repos/$fork" --jq '.parent.full_name // ""')" = "$ORG/$repo" ] || { echo "  $fork exists but is not a fork of $ORG/$repo; not touching it" >&2; return 1; }
 
   matrix=""
   for spec in "$@"; do
@@ -32,11 +36,11 @@ install() {  # install <repo> <product> <branch> <role=dockerfile:context>...
     matrix+="          - { role: $role, dockerfile: $df, context: $ctx }"$'\n'
   done
   # Replace the env block values and the whole example matrix with this repository's.
-  wf=$(awk -v up="$ORG/$repo" -v prod="$product" -v br="$branch" -v m="$matrix" '
+  wf=$(MATRIX="$matrix" awk -v up="$ORG/$repo" -v prod="$product" -v br="$branch" '
     /^  UPSTREAM: /       {print "  UPSTREAM: " up; next}
     /^  PRODUCT: /        {print "  PRODUCT: " prod; next}
     /^  MIRROR_BRANCH: /  {print "  MIRROR_BRANCH: " br; next}
-    /^        include:$/  {print; printf "%s", m; skip=1; next}
+    /^        include:$/  {print; printf "%s", ENVIRON["MATRIX"]; skip=1; next}
     skip && /^          - \{/ {next}
     {skip=0; print}' ci/fork-mirror-and-images.yml)
 
@@ -49,7 +53,7 @@ install() {  # install <repo> <product> <branch> <role=dockerfile:context>...
   fi
   path=.github/workflows/oan-images.yml
   existing=$(gh api "repos/$fork/contents/$path?ref=oan-ci" --jq .sha 2>/dev/null || true)
-  content=$(printf '%s\n' "$wf" | base64 -w0)
+  content=$(printf '%s\n' "$wf" | base64 | tr -d '\n')
   gh api -X PUT "repos/$fork/contents/$path" -f branch=oan-ci -f message="Mirror $ORG/$repo $branch and publish OAN images" \
     -f content="$content" ${existing:+-f sha="$existing"} >/dev/null
   echo "  workflow: $fork@oan-ci:$path ($*)"

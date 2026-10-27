@@ -20,6 +20,8 @@ export MSYS_NO_PATHCONV=1
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 # shellcheck disable=SC1091
+source scripts/env.sh
+# shellcheck disable=SC1091
 source scripts/components.sh
 # shellcheck disable=SC1091
 source scripts/ui.sh
@@ -31,24 +33,28 @@ product=$(comp_field "$id" 8)
 roles=$(comp_roles "$id"); [ $# -eq 0 ] || roles="$*"
 
 src=$(scripts/src.sh dir "$id")
-[ -d "$src/.git" ] || scripts/src.sh clone "$id"
+[ -e "$src/.git" ] || scripts/src.sh clone "$id"
 # Scripts the Dockerfiles copy into Linux images must be LF. A checkout made with Git's Windows
 # default (core.autocrlf=true) is CRLF and every entrypoint dies with "no such file or directory".
-if crlf=$(git -C "$src" ls-files --eol 2>/dev/null | awk '$1=="i/lf" && $2=="w/crlf" {print $4}' | head -3) && [ -n "$crlf" ]; then
+# (awk stops after three hits itself: a `head` here would SIGPIPE git under pipefail and skip the guard.)
+crlf=$(git -C "$src" ls-files --eol 2>/dev/null | awk '$1=="i/lf" && $2=="w/crlf" {print $NF; if (++n == 3) exit}' || true)
+if [ -n "$crlf" ]; then
   fail "refusing to build: $src has CRLF working files that are LF in git (e.g. $(head -1 <<<"$crlf"))"
-  echo "fix: git -C \"$src\" config core.autocrlf false && git -C \"$src\" rm -rq --cached . && git -C \"$src\" reset -q --hard" >&2
+  echo "fix (commit or stash your work first): git -C \"$src\" config core.autocrlf false && git -C \"$src\" rm -rq --cached . && git -C \"$src\" reset -q --hard" >&2
   exit 1
 fi
 step "Build $id from $src ($(git -C "$src" rev-parse --short HEAD 2>/dev/null || echo 'not a git checkout'))"
 
+missed=0
 for role in $roles; do
-  spec=$(comp_dockerfile "$id" "$role") || { warn "$id has no role '$role' (roles: $(comp_roles "$id"))"; continue; }
+  spec=$(comp_dockerfile "$id" "$role") || { fail "$id has no role '$role' (roles: $(comp_roles "$id"))"; missed=1; continue; }
   df=${spec%%:*}; ctx=${spec#*:}
-  [ -f "$src/$df" ] || { note "skip $role: $df not in this checkout"; continue; }
+  [ -f "$src/$df" ] || { fail "$role: $df is not in this checkout ($(git -C "$src" rev-parse --abbrev-ref HEAD 2>/dev/null))"; missed=1; continue; }
   tag="oan/$product/$role:local"
   note "$tag  ($df, context $ctx)"
-  t0=$SECONDS
+  t0=$EPOCHSECONDS
   # shellcheck disable=SC2086
   docker build ${OAN_BUILD_ARGS:-} -f "$src/$df" -t "$tag" "$src/$ctx"
   ok "$tag $C_DIM($(elapsed $t0))$C_OFF"
 done
+exit $missed

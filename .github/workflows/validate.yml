@@ -37,10 +37,12 @@ jobs:
         env:
           COMPOSE_PROFILES: '*'
         run: |
+          fail=0
           for ns in commons farmer crop live; do
             files=(-f out/$ns/compose.yaml); [ -f overrides/$ns.yaml ] && files+=(-f overrides/$ns.yaml)
-            docker compose "${files[@]}" config -q && echo "$ns ok"
+            if docker compose "${files[@]}" config -q; then echo "$ns ok"; else echo "$ns INVALID"; fail=1; fi
           done
+          exit $fail
       - name: No private hosts or registries in the compose projects
         run: |
           ! grep -rE 'oanstaging\.com|dkr\.ecr\.|istio-system' out/*/compose.yaml out/files
@@ -49,10 +51,10 @@ jobs:
           COMPOSE_PROFILES: '*'
         run: |
           fail=0
-          for ns in commons farmer crop live; do docker compose -f out/$ns/compose.yaml config --images; done | sort -u | while read -r img; do
+          while read -r img; do
             case "$img" in oan/*:local) continue ;; esac
             docker manifest inspect "$img" >/dev/null 2>&1 || { echo "not pullable: $img"; fail=1; }
-          done
+          done < <(for ns in commons farmer crop live; do docker compose -f out/$ns/compose.yaml config --images; done | sort -u)
           exit $fail
       - name: Report
         if: always()

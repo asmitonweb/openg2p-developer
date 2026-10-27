@@ -47,11 +47,16 @@ the file disappears and the note stops appearing.
 - **Geography** for every registry comes from Master Data, which the commons-services chart
   seeds from the `ETH-OAN` country pack (`ghcr.io/asmitonweb/master-data-db-seed`, built from the
   openg2p-data fork). The registry seeds run with `loadGeoData: false`.
-- **Sample records** are enabled locally (`loadSampleData: true` in `values/<id>.yaml`). The farmer
-  seed builds its sample people from Master Data; crop and livestock ship SQL sample sets in
+- **Sample records** are switched per registry with `loadSampleData` in `values/<id>.yaml` (on for
+  crop and livestock, off for farmer until its upstream sample loader matches the pack's codes).
+  The farmer seed builds its sample people from Master Data; crop and livestock ship SQL sample sets in
   `docker/db-seed/sample-data/`. Crop and livestock additionally apply their own Ethiopia geo SQL
   to the Master Data database (`LOAD_ETHIOPIA_GEO`, default true in their entrypoints).
 - **Templates** (DCI/VC) load with `loadTemplates: true`.
+- **Reporting views** (`reporting.views.enabled`, farmer: `analytics.reportingViews.enabled`) are
+  on in every registry's values: the dashboard APIs read them. They are materialized; the chart's
+  refresh CronJob runs locally as a loop service (`<release>-*-reporting-views-refresh`), and
+  `./oan.sh rerun <release>-*-reporting-views` rebuilds them after a re-seed.
 - Re-seed with `./oan.sh rerun <release>-db-seed`; the seed applies the metadata tree as a whole.
 
 ## Developing against a registry
@@ -71,6 +76,7 @@ full loop is in [developing-a-registry.md](developing-a-registry.md).
 
 `Centre-for-Open-Societal-Systems/da-registry` contains a README only, and the oan-helm chart
 `openg2p-da-registry` disables every component with empty image fields. The stack renders it
-(so its database and Keycloak plumbing appear once enabled) but `./oan.sh up da` stops with a
-message because there is nothing to run. When the repository gains Dockerfiles, add its roles to
-`scripts/build.sh` and enable the components in `values/da.yaml`.
+(so its database and Keycloak plumbing appear once enabled) but selecting `da` starts nothing:
+the chart renders no workloads, so `up` has no project to start for it. When the repository gains
+Dockerfiles, give its catalogue line in `scripts/components.sh` a product, Dockerfile pattern and
+roles, and enable the components in `values/da.yaml`.

@@ -57,3 +57,21 @@ openg2p-consent-manager:
     envVars:
       CONSENT_MANAGER_OTP_PUBLISH_ENABLED: 'false'
       CONSENT_MANAGER_OTP_LOG_CODES: 'true'
+
+# The consent partner portal and the aggregation API authenticate partners against a `partner`
+# realm that the COSS chart expects to exist (created by hand on the dev cluster). Locally the
+# commons-services keycloak-init job creates it, with a public client for the portal and a test
+# partner user (partner / partner).
+keycloak-init:
+  realms:
+    partner:
+      clients:
+      - clientId: consent-partner-portal
+        name: Consent partner portal
+        publicClient: true
+        redirectUris:
+        - http://consent-partner-portal.openg2p.localtest.me/*
+      users:
+      - username: partner
+        password: partner
+        email: partner@example.com

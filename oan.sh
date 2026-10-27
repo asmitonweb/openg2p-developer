@@ -19,7 +19,9 @@
 #   ./oan.sh urls                         browser URLs and seeded users
 #   ./oan.sh components                   the catalogue (scripts/components.sh)
 #
-# Image source (where the OAN images come from), via OAN_IMAGE_SOURCE in .env or the shell:
+# `up <component...>` and `dev <component...>` add the components to the saved selection.
+#
+# Image source (where the OAN images come from), via OAN_IMAGE_SOURCE in the shell or .env:
 #   ghcr   (default) pull ghcr.io/asmitonweb/<product>/<role>:latest (built from COSS develop);
 #          an image that cannot be pulled yet is built from source and tagged with that name
 #   local  always build from the checkouts in oan-workspace/ with scripts/build.sh (oan/…:local);
@@ -28,7 +30,8 @@ set -euo pipefail
 export MSYS_NO_PATHCONV=1
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
-[ -f .env ] && set -a && . ./.env && set +a
+# shellcheck disable=SC1091
+source scripts/env.sh
 # shellcheck disable=SC1091
 source scripts/components.sh
 # shellcheck disable=SC1091
@@ -51,54 +54,53 @@ need() { command -v "$1" >/dev/null 2>&1 || { echo "$1 is required" >&2; exit 1;
 need docker; need git; need curl
 docker info >/dev/null 2>&1 || { echo "Docker is not running" >&2; exit 1; }
 
-set_env() {  # set_env KEY VALUE: persist a setting in .env (created if needed)
-  touch .env
-  if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else echo "$1=$2" >> .env; fi
-}
 selection() {  # selection [component...]: the closure of the arguments, else of the saved selection
-  comp_closure "${@:-$(selected_components)}"
+  if [ $# -gt 0 ]; then comp_closure "$@"; else comp_closure $(selected_components); fi
 }
 namespaces_of() {  # projects the components live in (commons always)
   { echo commons; for id in "$@"; do comp_field "$id" 6; done; } | awk '!seen[$0]++'
 }
-rendered_for() {  # is out/ current for this selection and image source?
+rendered_for() {  # is out/ current for this selection, image source and tag?
   [ -f out/versions.rendered.env ] || return 1
-  grep -qx "OAN_IMAGE_PREFIX=$OAN_IMAGE_PREFIX" out/versions.rendered.env || return 1
-  grep -qx "COMPONENTS=$(printf '%s\n' "$@" | sort | tr '\n' ' ')" out/versions.rendered.env || return 1
-  # a change to versions.env, values or images.yaml re-renders
+  grep -qxF "OAN_IMAGE_PREFIX=$OAN_IMAGE_PREFIX" out/versions.rendered.env || return 1
+  grep -qxF "OAN_IMAGE_TAG=$OAN_IMAGE_TAG" out/versions.rendered.env || return 1
+  grep -qxF "COMPONENTS=$(printf '%s\n' "$@" | sort | tr '\n' ' ')" out/versions.rendered.env || return 1
+  # a change to versions.env, values, extras or images.yaml re-renders
   local newest
-  newest=$(ls -t versions.env images.yaml values/*.yaml scripts/gen.py scripts/components.sh | head -1)
+  newest=$(ls -t versions.env images.yaml values/*.yaml extras/*.yaml scripts/gen.py scripts/components.sh 2>/dev/null | head -1)
   [ ! "$newest" -nt out/versions.rendered.env ]
 }
 compose_files() { local f=(-f "out/$1/compose.yaml"); [ -f "overrides/$1.yaml" ] && f+=(-f "overrides/$1.yaml"); printf '%s\n' "${f[@]}"; }
+dc() { local ns="$1"; shift; local cf; mapfile -t cf < <(compose_files "$ns"); docker compose "${cf[@]}" "$@"; }
 images_of() {  # images_of <ns>: images of a project that come from this stack's OAN remap
-  docker compose -f "out/$1/compose.yaml" config --images 2>/dev/null | grep -E "^$OAN_IMAGE_PREFIX/" | sort -u
+  dc "$1" config --images | awk -v p="$OAN_IMAGE_PREFIX/" 'index($0, p) == 1' | sort -u
 }
 services_running() {  # services_running <ns> <image>: services of the project that run the image
-  docker compose -f "out/$1/compose.yaml" config 2>/dev/null \
-    | awk -v img="$2" '/^  [A-Za-z0-9_.-]+:$/ {svc=$1; sub(/:$/, "", svc)} $1=="image:" && $2==img {print svc}'
+  dc "$1" config | awk -v img="$2" '/^  [A-Za-z0-9_.-]+:$/ {svc=$1; sub(/:$/, "", svc)} $1=="image:" && $2==img {print svc}'
 }
 build_missing() {  # build_missing <image...>: build each image from source and give it the expected name
   local img rest product role comp
   for img in "$@"; do
     rest=${img#"$OAN_IMAGE_PREFIX/"}; product=${rest%%/*}; role=${rest#*/}; role=${role%%:*}
     comp=$(comp_for_image "$product" "$role") || { warn "no component builds $img (scripts/components.sh)"; continue; }
-    scripts/build.sh "$comp" "$role"
+    scripts/build.sh "$comp" "$role" || { fail "build of $img failed"; exit 1; }
     [ "$img" = "oan/$product/$role:local" ] || docker tag "oan/$product/$role:local" "$img"
   done
 }
 ensure_images() {  # ensure_images <ns...>: pull (with progress) or build every OAN image of the projects
-  local ns img missing=() svcs=()
+  local ns img list missing=() svcs=()
   for ns in "$@"; do
     [ -f "out/$ns/compose.yaml" ] || continue
+    list=$(images_of "$ns") || { fail "docker compose config failed for out/$ns/compose.yaml"; exit 1; }
     while read -r img; do
+      [ -n "$img" ] || continue
       docker image inspect "$img" >/dev/null 2>&1 && continue
       missing+=("$img")
       [ "$OAN_IMAGE_SOURCE" = ghcr ] && mapfile -t -O ${#svcs[@]} svcs < <(services_running "$ns" "$img")
-    done < <(images_of "$ns")
+    done <<<"$list"
     if [ "$OAN_IMAGE_SOURCE" = ghcr ] && [ ${#svcs[@]} -gt 0 ]; then
       note "pulling ${#svcs[@]} image reference(s) for $ns from $OAN_IMAGE_PREFIX"
-      docker compose -f "out/$ns/compose.yaml" pull --ignore-pull-failures "${svcs[@]}" || true
+      dc "$ns" pull --ignore-pull-failures "${svcs[@]}" || true
       svcs=()
     fi
   done
@@ -108,7 +110,10 @@ ensure_images() {  # ensure_images <ns...>: pull (with progress) or build every 
   [ ${#unpulled[@]} -gt 0 ] || return 0
   if [ "$OAN_IMAGE_SOURCE" = ghcr ]; then
     warn "not on GHCR (yet): ${unpulled[*]}"
-    note "building from source instead and tagging with the published name (a later pull replaces it)"
+    case "$OAN_IMAGE_TAG" in
+      latest|develop) note "building from source instead and tagging with the published name (a later pull replaces it)" ;;
+      *) fail "OAN_IMAGE_TAG=$OAN_IMAGE_TAG names a specific build; a local build of develop would not be that. Publish it, or use latest."; exit 1 ;;
+    esac
   fi
   build_missing "${unpulled[@]}"
 }
@@ -127,24 +132,35 @@ select_menu() {
   done
   check() {  # check <i>: tick it and what it requires
     local j req; checked[$1]=1; req=$(comp_field "${ids[$1]}" 12)
-    [ "$req" = - ] || for j in "${!ids[@]}"; do case " $req " in *" ${ids[j]} "*) check "$j" ;; esac; done
+    if [ "$req" != - ]; then for j in "${!ids[@]}"; do case " $req " in *" ${ids[j]} "*) check "$j" ;; esac; done; fi
+    return 0
   }
   uncheck() {  # uncheck <i>: untick it and what depends on it; mandatory ones stay
-    local j; [ "${locked[$1]}" = 1 ] && return 0; checked[$1]=0
-    for j in "${!ids[@]}"; do [ "${checked[j]}" = 1 ] && case " $(comp_field "${ids[j]}" 12) " in *" ${ids[$1]} "*) uncheck "$j" ;; esac; done
+    local j
+    if [ "${locked[$1]}" = 1 ]; then return 0; fi
+    checked[$1]=0
+    for j in "${!ids[@]}"; do
+      if [ "${checked[j]}" = 1 ]; then case " $(comp_field "${ids[j]}" 12) " in *" ${ids[$1]} "*) uncheck "$j" ;; esac; fi
+    done
+    return 0
   }
-  result() { local i; for ((i = 0; i < n; i++)); do [ "${checked[i]}" = 1 ] && printf '%s ' "${ids[i]}"; done; }
+  toggle() { if [ "${checked[$1]}" = 1 ]; then uncheck "$1"; else check "$1"; fi; }
+  result() { local i; for ((i = 0; i < n; i++)); do [ "${checked[i]}" = 1 ] && printf '%s ' "${ids[i]}"; done; return 0; }
   # The menu is drawn on stderr: stdout carries only the result (the caller captures it).
   if [ -z "$UI_TTY" ]; then
     echo "Components (current selection marked):" >&2
     for ((i = 0; i < n; i++)); do printf '  %2d %s %-24s %s%s\n' $((i + 1)) "$([ "${checked[i]}" = 1 ] && echo '[x]' || echo '[ ]')" "${ids[i]}" "${titles[i]}" "$([ "${locked[i]}" = 1 ] && echo ' (always)')" >&2; done
     printf 'numbers to toggle (space separated), Enter to keep: ' >&2
-    read -r line
-    for i in $line; do i=$((i - 1)); [ "${checked[i]}" = 1 ] && uncheck "$i" || check "$i"; done
+    read -r line || line=""
+    for i in $line; do
+      case "$i" in *[!0-9]*|'') echo "ignored: $i" >&2; continue ;; esac
+      [ "$i" -ge 1 ] && [ "$i" -le "$n" ] || { echo "ignored: $i (1-$n)" >&2; continue; }
+      toggle $((i - 1))
+    done
     result; return 0
   fi
   exec 3>&2
-  local lines=$((n + 3)) kind_shown
+  local lines=$((n + 3))
   draw() {
     local i mark cursor
     printf '%s%sSelect components%s  %sspace%s toggle  %s↑↓/jk%s move  %senter%s save  %sq%s cancel\n' "$C_BOLD" "$C_BLUE" "$C_OFF" "$C_BOLD" "$C_OFF" "$C_BOLD" "$C_OFF" "$C_BOLD" "$C_OFF" "$C_BOLD" "$C_OFF" >&3
@@ -157,41 +173,53 @@ select_menu() {
     printf '\e[K%sselected:%s %s\n' "$C_DIM" "$C_OFF" "$(result)" >&3
     printf '\e[K%sservices become part of commons; features and add-ons join their registry%s\n' "$C_DIM" "$C_OFF" >&3
   }
-  printf '\e[?25l' >&3; trap 'printf "\e[?25h" >&3' RETURN
+  printf '\e[?25l' >&3
+  trap 'printf "\e[?25h" >&3' RETURN
+  trap 'printf "\e[?25h\n" >&3; exit 130' INT
   draw
   while :; do
-    IFS= read -rsn1 key
+    IFS= read -rsn1 key || key=q
     case "$key" in
-      $'\e') IFS= read -rsn2 -t 0.1 rest || rest=""; case "$rest" in '[A') key=k ;; '[B') key=j ;; *) key=q ;; esac ;;
+      $'\e')
+        IFS= read -rsn2 -t 0.2 rest || rest=""
+        case "$rest" in '[A'|'OA') key=k ;; '[B'|'OB') key=j ;; '') key=q ;; *) IFS= read -rsn1 -t 0.1 _ || true; key=ignore ;; esac ;;
+      $'\r') key='' ;;
     esac
     case "$key" in
       k) cur=$(( (cur - 1 + n) % n )) ;;
       j) cur=$(( (cur + 1) % n )) ;;
-      ' ') [ "${checked[cur]}" = 1 ] && uncheck "$cur" || check "$cur" ;;
-      [1-9]) i=$((key - 1)); [ $i -lt $n ] && { cur=$i; [ "${checked[i]}" = 1 ] && uncheck "$i" || check "$i"; } ;;
+      ' ') toggle "$cur" ;;
+      [1-9]) i=$((key - 1)); [ $i -lt $n ] && { cur=$i; toggle "$i"; } ;;
       '') printf '\e[?25h' >&3; result; return 0 ;;
       q) printf '\e[?25h' >&3; return 1 ;;
     esac
     printf '\e[%dA' "$lines" >&3; draw
   done
 }
-do_select() {
+do_select() {  # returns 1 when the user cancelled
   local picked
-  picked=$(select_menu) || { echo "selection unchanged"; return 0; }
+  picked=$(select_menu) || { echo "cancelled; selection unchanged"; return 1; }
   picked=$(comp_closure $picked | tr '\n' ' '); picked=${picked% }
   [ -n "$picked" ] || { echo "nothing selected; keeping the previous selection"; return 0; }
   set_env OAN_COMPONENTS "\"$picked\""
   ok "OAN_COMPONENTS=\"$picked\" saved to .env"
   export OAN_COMPONENTS="$picked"
 }
+add_to_selection() {  # add_to_selection <component...>: persist the saved selection plus these
+  local sel
+  sel=$(comp_closure $(selected_components) "$@" | tr '\n' ' '); sel=${sel% }
+  [ "$sel" = "${OAN_COMPONENTS:-}" ] || { set_env OAN_COMPONENTS "\"$sel\""; note "OAN_COMPONENTS=\"$sel\""; }
+  export OAN_COMPONENTS="$sel"
+}
 
-reload() {  # reload <id> [role...]: rebuild from src/ and restart the services that run those images
+reload() {  # reload <id> [role...]: rebuild from the workspace and restart the services that run those images
   local id="$1"; shift
   [ "$OAN_IMAGE_SOURCE" = local ] || { echo "reload needs OAN_IMAGE_SOURCE=local (./oan.sh dev $id sets it)" >&2; exit 1; }
-  scripts/build.sh "$id" "$@"
   local product ns roles role img s long=() jobs=()
   product=$(comp_field "$id" 8); ns=$(comp_field "$id" 6)
+  [ "$product" != - ] || { echo "$id ships no image; nothing to reload" >&2; exit 1; }
   [ -f "out/$ns/compose.yaml" ] || { echo "nothing rendered for $id: ./oan.sh dev $id first" >&2; exit 1; }
+  scripts/build.sh "$id" "$@"
   roles="$*"; [ -n "$roles" ] || roles=$(comp_roles "$id")
   for role in $roles; do
     img="$OAN_IMAGE_PREFIX/$product/$role:$OAN_IMAGE_TAG"
@@ -201,13 +229,13 @@ reload() {  # reload <id> [role...]: rebuild from src/ and restart the services 
   done
   if [ ${#long[@]} -gt 0 ]; then
     step "Restart: ${long[*]}"
-    mapfile -t cf < <(compose_files "$ns")
-    docker compose "${cf[@]}" up -d --force-recreate --no-deps "${long[@]}"
+    dc "$ns" up -d --force-recreate --no-deps "${long[@]}"
   fi
   if [ ${#jobs[@]} -gt 0 ]; then
     note "jobs using a rebuilt image (run again with ./oan.sh rerun <job>): ${jobs[*]}"
     for s in "${jobs[@]}"; do case "$s" in *-db-seed) note "metadata/seed change: ./oan.sh rerun $s";; esac; done
   fi
+  [ ${#long[@]} -gt 0 ] || [ ${#jobs[@]} -gt 0 ] || warn "no rendered service runs an image of $id (${roles})"
 }
 
 urls() {
@@ -220,7 +248,7 @@ urls() {
   local id
   for id in "$@"; do
     case "$(comp_kind "$id")" in
-      registry) echo "  $(printf '%-17s' "$id registry") http://$(grep -m1 'registryHostname:' "values/$id.yaml" | awk '{print $2}')" ;;
+      registry) [ -f "out/$id/compose.yaml" ] && echo "  $(printf '%-17s' "$id registry") http://$(grep -m1 'registryHostname:' "values/$id.yaml" | awk '{print $2}')" ;;
       addon) echo "  $(printf '%-17s' "$id") http://$(grep -m1 '^host:' "values/$id.yaml" | awk '{print $2}')" ;;
       service) echo "  $(printf '%-17s' "$id") see out/REPORT.md (gateway hosts)" ;;
     esac
@@ -229,36 +257,38 @@ urls() {
 }
 
 up() {
-  local sel regs
+  local sel regs=() id
   mapfile -t sel < <(selection "$@")
   [ ${#sel[@]} -gt 0 ] || { echo "nothing selected: ./oan.sh select" >&2; exit 1; }
-  UI_T0=$SECONDS
+  UI_T0=$EPOCHSECONDS
   rendered_for "${sel[@]}" || scripts/render.sh "${sel[@]}"
   step "Workspace: every OAN repository in ${OAN_SRC_DIR:-oan-workspace}/"
-  scripts/src.sh clone
+  scripts/src.sh clone || warn "some repositories could not be cloned; the stack still starts"
   step "Images"
   mapfile -t ns < <(namespaces_of "${sel[@]}")
   ensure_images "${ns[@]}"
-  regs=$(for id in "${sel[@]}"; do [ "$(comp_kind "$id")" = registry ] && [ -f "out/$id/compose.yaml" ] && echo "$id"; done | tr '\n' ' ')
-  # shellcheck disable=SC2086
-  scripts/stack.sh up ${regs:-commons}
+  for id in "${sel[@]}"; do
+    if [ "$(comp_kind "$id")" = registry ] && [ -f "out/$id/compose.yaml" ]; then regs+=("$id"); fi
+  done
+  [ ${#regs[@]} -gt 0 ] || regs=(commons)
+  scripts/stack.sh up "${regs[@]}"
   urls "${sel[@]}"
 }
 
 cmd="${1:-help}"; shift || true
 case "$cmd" in
-  select) do_select ;;
+  select) do_select || exit 1 ;;
   up)
-    if [ $# -eq 0 ] && [ -z "${OAN_COMPONENTS:-}" ] && [ -n "$UI_TTY" ]; then do_select; fi
     for id in "$@"; do comp_field "$id" 1 >/dev/null; done
-    up "$@" ;;
+    if [ $# -eq 0 ] && [ -z "${OAN_COMPONENTS:-}" ] && [ -n "$UI_TTY" ]; then do_select || exit 1; fi
+    [ $# -eq 0 ] || add_to_selection "$@"
+    up ;;
   dev)
     for id in "$@"; do comp_field "$id" 1 >/dev/null; done
-    if [ $# -eq 0 ] && [ -z "${OAN_COMPONENTS:-}" ] && [ -n "$UI_TTY" ]; then do_select; fi
+    if [ $# -eq 0 ] && [ -z "${OAN_COMPONENTS:-}" ] && [ -n "$UI_TTY" ]; then do_select || exit 1; fi
     [ "$OAN_IMAGE_SOURCE" = local ] || { set_env OAN_IMAGE_SOURCE local; note "OAN_IMAGE_SOURCE=local written to .env: images now come from your source checkouts"; }
-    sel=$(comp_closure $(selected_components) "$@" | tr '\n' ' '); sel=${sel% }
-    [ "$sel" = "${OAN_COMPONENTS:-}" ] || { set_env OAN_COMPONENTS "\"$sel\""; note "OAN_COMPONENTS=\"$sel\""; }
-    OAN_IMAGE_SOURCE=local OAN_COMPONENTS="$sel" exec "$0" up ;;
+    [ $# -eq 0 ] || add_to_selection "$@"
+    OAN_IMAGE_SOURCE=local exec "$ROOT/oan.sh" up ;;
   src) scripts/src.sh "$@" ;;
   reload) id="${1:-}"; [ -n "$id" ] || { echo "usage: ./oan.sh reload <component> [role...]" >&2; exit 1; }; comp_field "$id" 1 >/dev/null; reload "$@" ;;
   build) scripts/build.sh "$@" ;;
@@ -267,7 +297,7 @@ case "$cmd" in
     for n in "${ns[@]}"; do
       [ -f "out/$n/compose.yaml" ] || continue
       mapfile -t svcs < <(for img in $(images_of "$n"); do services_running "$n" "$img"; done | sort -u)
-      [ ${#svcs[@]} -eq 0 ] || docker compose -f "out/$n/compose.yaml" pull --ignore-pull-failures "${svcs[@]}"
+      [ ${#svcs[@]} -eq 0 ] || dc "$n" pull --ignore-pull-failures "${svcs[@]}"
     done
     echo "restart to use them: ./oan.sh up" ;;
   render) scripts/render.sh "$@" ;;
@@ -278,7 +308,7 @@ case "$cmd" in
   urls) urls $(selection) ;;
   components)
     printf '%-24s %-9s %-26s %s\n' id kind "source (COSS)" title
-    for r in "${COMPONENTS[@]}"; do printf '%-24s %-9s %-26s %s\n' "$(cut -d'|' -f1 <<<"$r")" "$(cut -d'|' -f2 <<<"$r")" "$(cut -d'|' -f7 <<<"$r")" "$(cut -d'|' -f13 <<<"$r")"; done
+    for r in "${COMPONENTS[@]}"; do IFS='|' read -r c1 c2 _ _ _ _ c7 _ _ _ _ _ c13 <<<"$r"; printf '%-24s %-9s %-26s %s\n' "$c1" "$c2" "$c7" "$c13"; done
     echo; echo "selected: $(selected_components | tr '\n' ' ')" ;;
-  *) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) sed -n '2,28p' "$ROOT/oan.sh" | sed 's/^# \{0,1\}//' ;;
 esac

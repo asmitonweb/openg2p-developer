@@ -7,19 +7,20 @@
 # aggregation-api: runs the upstream scripts/register-aggregator.py of oan-aggregation-api
 # inside python:3.12-slim on the `openg2p` network (nothing is installed on the host). The script
 #   - creates the Keycloak client `aggregation-layer` in the staff realm (CONSENT_MANAGER_ADMIN),
-#   - generates the Ed25519 signing key (src/oan-aggregation-api/deploy/keys/aggregation-layer.p12),
+#   - generates the Ed25519 signing key (oan-workspace/oan-aggregation-api/deploy/keys/aggregation-layer.p12),
 #   - registers partner PARTNER_AGGREGATION_LAYER in Partner Management,
 #   - creates one Consent Manager binding per catalogue entry (approving its own AWE tasks),
 #   - writes the client secret into deploy/.env.
 # Afterwards the key (encrypted with the Secret's `password`) and the client secret are pinned
 # in state/secrets.json, the stack is re-rendered and the service is recreated.
 # The catalogue is the one rendered from extras/aggregation-api.yaml (out/files), so render the
-# selection with the component first (./oan.sh up / scripts/render.sh).
+# selection with the component first (./oan.sh select, then ./oan.sh up).
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-[ -f .env ] && set -a && . ./.env && set +a
+# shellcheck disable=SC1091
+source scripts/env.sh
 # shellcheck disable=SC1091
 source scripts/components.sh
 # shellcheck disable=SC1091
@@ -78,8 +79,11 @@ onboard_aggregation_api() {
   ok "onboarded; key and client secret pinned in state/secrets.json"
 
   step "Re-render and recreate $svc"
-  # shellcheck disable=SC2046
-  scripts/render.sh $(selected_components)
+  # the rendered selection (`up <ids>` may differ from the one saved in .env)
+  local comps
+  comps=$(grep -m1 '^COMPONENTS=' out/versions.rendered.env 2>/dev/null | cut -d= -f2- | tr -d '"')
+  # shellcheck disable=SC2046,SC2086
+  scripts/render.sh ${comps:-$(selected_components)}
   files=(-f "$compose")
   [ -f overrides/commons.yaml ] && files+=(-f overrides/commons.yaml)
   COMPOSE_PROFILES='*' docker compose "${files[@]}" up -d --force-recreate --no-deps "$svc"

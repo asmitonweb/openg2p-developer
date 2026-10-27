@@ -24,8 +24,11 @@ renders) and openg2p-data (the Master Data packs). `./oan.sh src status` lists t
 `./oan.sh dev` switches to develop mode: it writes `OAN_IMAGE_SOURCE=local` to `.env`, builds the
 selection's images from the workspace and starts the stack (`./oan.sh dev <component>` adds that
 component to the selection first; with nothing selected yet it opens the checklist). Mandatory
-parts of commons, such as the Consent Manager, are always selected and cannot be removed. Commons (layers 1 and 2) are the same published images in both modes. To go back to
-published images, set `OAN_IMAGE_SOURCE=ghcr` in `.env` and run `./oan.sh up`.
+parts of commons, such as the Consent Manager, are always selected and cannot be removed. The
+upstream commons images (Postgres, Keycloak, IAM, Master Data, …) are the same published images
+in both modes; the OAN-built ones (registries, Consent Manager, aggregation API, partner portal,
+dashboards) are what the mode switches. To go back to published images, set
+`OAN_IMAGE_SOURCE=ghcr` in `.env` and run `./oan.sh up`.
 
 ```
 oan-workspace/
@@ -39,7 +42,9 @@ oan-workspace/
   openg2p-data/                    Master Data packs (source kind)
 ```
 
-The scripts never modify a checkout that exists: no fetch, no reset, no branch switch. Git in
+The scripts never modify a checkout that exists: no reset, no branch switch (`src status` only
+fetches `origin/develop` to show the distance; after the remote rename below that is your fork's
+`develop`, so keep it in step with upstream). Git in
 `oan-workspace/<repo>` is yours. To use a checkout you already have elsewhere, point
 `OAN_<ID>_SRC` (`OAN_FARMER_SRC`, `OAN_CONSENT_MANAGER_SRC`, …) or `OAN_SRC_DIR` at it in `.env`.
 On Windows the clones are made with `core.autocrlf=false`; a CRLF checkout breaks every container
@@ -49,6 +54,7 @@ entrypoint and `build` refuses it.
 
 ```bash
 ./oan.sh select && ./oan.sh dev              # 1. pick farmer, run it from source (first time: ~15 min of builds)
+#   first ./oan.sh dev also builds every other selected OAN component from source
 cd oan-workspace/farmer-registry
 git switch -c odk-geo-codes                  # 2. your branch (see "Git flow" below)
 #   ... edit metadata, widgets, extension package, seeds ...
@@ -73,7 +79,7 @@ restarted automatically: `reload` prints the `rerun` command for them.
 | `celery` | `farmer-registry-celery-worker`, `farmer-registry-celery-beat-producer` | tasks, schedules |
 | `db-seed` | `farmer-registry-db-seed` (job), `farmer-registry-fr-reporting-views` (job) | register metadata, widgets, AWE metadata, seeds, reporting views |
 | `staff-ui` | `farmer-registry-staff-portal-ui--pod` | UI widgets and translations |
-| `dashboard-api` | `farmer-registry-dashboard-api` (component `farmer-dashboard-api`) | chart queries over the reporting views |
+| `dashboard-api` | `farmer-registry-dashboard-api--pod` (component `farmer-dashboard-api`) | chart queries over the reporting views |
 | `dashboard` | `farmer-registry-dashboard--pod` (component `farmer-dashboard`) | the Next.js dashboard |
 
 Commons services: `consent-manager-api` → `commons-services-cm-api--pod` and `commons-services-cm-partner-api--pod`,

@@ -21,6 +21,8 @@ export MSYS_NO_PATHCONV=1
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 # shellcheck disable=SC1091
+source scripts/env.sh
+# shellcheck disable=SC1091
 source scripts/components.sh
 # shellcheck disable=SC1091
 source scripts/ui.sh
@@ -33,7 +35,7 @@ TSV=out/services.tsv  # namespace, profile, service, kind
 INFRA="postgresql redis redis-auth keycloak minio kafka softhsm"
 CORE="postgresql redis keycloak minio"
 COMMONS="$CORE iam-service master-data awe staff-portal-ui commons-services"
-LONG='statefulset|deployment|forwarder'
+LONG='statefulset|cronjob|deployment|forwarder'
 
 namespaces() { cut -f1 "$TSV" | sort -u; }
 is_ns() { namespaces | grep -qx -- "$1"; }
@@ -76,13 +78,24 @@ expand() {
 }
 project_only() {  # a registry's own project, without commons (for stop)
   awk -F'\t' -v ns="$1" '$1==ns && $2!="-" {print $1"\t"$2}' "$TSV" | awk '!seen[$0]++'
+  return 0
 }
+is_job() { awk -F'\t' -v s="$1" '$3==s && $4=="job" {f=1} END {exit !f}' "$TSV"; }
+all_projects() { { namespaces; comp_by_kind registry | tr ' ' '\n'; } | sort -u | grep -v '^$'; }
 
 # services <kinds-regex> <selection>: service names of the selected (ns, profile) pairs
 services() {
   local kinds="$1" sel="$2"
   [ -n "$sel" ] || return 0
   awk -F'\t' -v k="^($kinds)$" 'NR==FNR {want[$1 FS $2]; next} (($1 FS $2) in want) && $4 ~ k {print $3}' <(printf '%s\n' "$sel") "$TSV"
+}
+# jobs_of <selection> hook|plain: the post-install hook jobs of the selection (by weight), or all its other jobs
+jobs_of() {
+  local sel="$1" which="$2"
+  [ -n "$sel" ] || return 0
+  awk -F'\t' -v w="$which" 'NR==FNR {want[$1 FS $2]; next}
+    (($1 FS $2) in want) && $4=="job" && ((w=="hook") == ($5!="-" && $5!="")) {print $5"\t"$3}' \
+    <(printf '%s\n' "$sel") "$TSV" | sort -n | cut -f2
 }
 ns_jobs() {  # ns_jobs <profile> <namespaces...>: that profile's jobs in the given projects
   local profile="$1"; shift
@@ -98,7 +111,7 @@ pending() {  # drop jobs that already completed successfully
 wait_jobs() {  # poll until each job exited 0, or stayed failed after its retries
   local j s t0 deadline=$((SECONDS + ${JOB_TIMEOUT:-900})) failed=0 first
   for j in "$@"; do
-    t0=$SECONDS; first=first
+    t0=$EPOCHSECONDS; first=first
     while :; do
       s=$(state "$j")
       case "$s" in
@@ -140,7 +153,7 @@ up() {
   local dbs="postgresql redis redis-auth"
   step "Infrastructure: $(cut -f2 <<<"$infra" | tr '\n' ' ')+ gateway"
   mapfile -t svc < <(services "$LONG" "$(awk -F'\t' -v i=" $dbs " 'index(i, " "$2" ")' <<<"$infra")")
-  by_ns up -d -- gateway "${svc[@]}"
+  by_ns up -d --remove-orphans -- gateway "${svc[@]}"
   # its conf is a bind-mounted file: a re-render changes it without recreating the container
   docker exec gateway nginx -s reload >/dev/null 2>&1 || true
 
@@ -157,19 +170,25 @@ up() {
   [ -n "$apps" ] || return 0
   local long jobs
   mapfile -t long < <(services "$LONG" "$apps")
-  mapfile -t jobs < <(pending $(services job "$apps" | grep -vE '^(commons-keycloak-init-|.*-(pg|postgres)-init|.*-kc-init)' || true))
+  mapfile -t jobs < <(pending $(jobs_of "$apps" plain | grep -vE '^(commons-keycloak-init-|.*-(pg|postgres)-init|.*-kc-init)' || true))
   step "Applications: $(cut -f2 <<<"$apps" | sort -u | tr '\n' ' ')"
   by_ns up -d -- "${long[@]}" "${jobs[@]}"
   [ ${#jobs[@]} -eq 0 ] || { note "seed and registration jobs"; wait_jobs "${jobs[@]}" || true; }
+  # Helm's post-install hooks (IAM client registration, smoke checks) ran once the release was up
+  local hooks
+  mapfile -t hooks < <(pending $(jobs_of "$apps" hook))
+  [ ${#hooks[@]} -eq 0 ] || { note "post-install hooks"; by_ns up -d -- "${hooks[@]}"; wait_jobs "${hooks[@]}" || true; }
 }
 
 stop() {
   local sel="" t svc
   for t in "$@"; do
-    if [ "$t" != commons ] && is_ns "$t"; then sel+=$(project_only "$t")$'\n'; else sel+=$(expand "$t")$'\n'; fi
+    if [ "$t" != commons ] && is_ns "$t"; then sel+=$(project_only "$t")$'\n'
+    elif [ "$t" != all ] && [ "$(comp_kind "$t" 2>/dev/null)" = registry ]; then note "$t: nothing rendered, nothing to stop"
+    else sel+=$(expand "$t")$'\n'; fi
   done
   mapfile -t svc < <(services "$LONG" "$sel")
-  [ ${#svc[@]} -gt 0 ] && by_ns stop -- "${svc[@]}"
+  [ ${#svc[@]} -eq 0 ] || by_ns stop -- "${svc[@]}"
 }
 
 ram() {
@@ -189,10 +208,19 @@ cmd="${1:-help}"; shift || true
 case "$cmd" in
   up) [ $# -gt 0 ] || { echo "usage: stack.sh up <$(comp_by_kind registry | sed 's/ $//; s/ /|/g')|commons|profile|service>..." >&2; exit 1; }; up "$@" ;;
   stop) [ $# -gt 0 ] || set -- all; stop "$@" ;;
-  rerun) by_ns up -d --force-recreate --no-deps -- "$@"; wait_jobs "$@" ;;
+  rerun)
+    [ $# -gt 0 ] || { echo "usage: stack.sh rerun <job>...   (the job rows of out/services.tsv)" >&2; exit 1; }
+    for j in "$@"; do is_job "$j" || { echo "not a rendered job: $j (see out/services.tsv)" >&2; exit 1; }; done
+    by_ns up -d --force-recreate --no-deps -- "$@"; wait_jobs "$@" ;;
   create) prepare; for ns in $(namespaces); do dc "$ns" create; done ;;
   ps) for ns in $(namespaces); do echo "== $ns"; dc "$ns" ps -a --format 'table {{.Name}}\t{{.Status}}'; done ;;
   ram) ram ;;
-  down) for ns in $(namespaces | sort -r); do dc "$ns" down; done ;;
-  *) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' ;;
+  down)
+    for ns in $(namespaces | sort -r); do dc "$ns" down --remove-orphans; done
+    # projects rendered earlier but not any more: remove their containers by label
+    for ns in $(all_projects); do
+      ids=$(docker ps -aq --filter "label=com.docker.compose.project=$ns")
+      [ -z "$ids" ] || { echo "removing leftover containers of $ns"; docker rm -f $ids >/dev/null; }
+    done ;;
+  *) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac

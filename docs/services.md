@@ -17,7 +17,7 @@ automatically.
 
 ```bash
 ./oan.sh select                              # checklist, saved to .env (OAN_COMPONENTS)
-scripts/render.sh farmer aggregation-api     # or name the components directly
+./oan.sh render farmer aggregation-api       # or name the components directly
 ```
 
 The selection decides the `--set` flags passed to `helm template` for the commons-services chart.
@@ -55,7 +55,7 @@ running (`./oan.sh up`, Keycloak, Partner Management and the Consent Manager hea
 ./oan.sh onboard aggregation-api      # scripts/onboard.sh aggregation-api
 ```
 
-It runs the upstream `scripts/register-aggregator.py` (checkout in `src/oan-aggregation-api`, cloned
+It runs the upstream `scripts/register-aggregator.py` (checkout in `oan-workspace/oan-aggregation-api`, cloned
 if missing) in a `python:3.12-slim` container on the `openg2p` network, so nothing is installed on
 the host. The script is re-runnable. It:
 
@@ -80,3 +80,13 @@ Manager caches policies for up to 60 seconds, so wait before the first request.
 Known limits: the staff search client `aggregation-layer-staff` is not created by the script, so
 `AGGREGATION_LAYER_STAFF_API_CLIENT_SECRET` stays empty; the chart's `AGGREGATION_LAYER_CM_BASE_URL`
 points at the CM partner API, and its Keycloak token URL for staff search uses the public host name.
+
+## Partner realm
+
+The partner-facing parts (consent partner portal, aggregation API partner tokens) use a Keycloak
+realm named `partner` that the COSS chart expects to exist already. Locally
+`values/commons-services.yaml` adds it to the commons-services `keycloak-init` job: a public
+client `consent-partner-portal` with the local redirect URI and a test user `partner` (password
+`partner`). This mirrors what was created by hand on the dev cluster and has not been verified
+end-to-end against the portal yet; if the login still fails, compare the realm in
+http://keycloak.openg2p.localtest.me with the portal's `config.json` in `out/files/`.

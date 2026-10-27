@@ -12,7 +12,7 @@ and puts the source of everything you run into `oan-workspace/`:
 ├──────────────────────────────────────────────────────────────────────┤
 │ 2. Commons Services  IAM · Master Data · AWE · Partner Mgmt ·        │  COSS chart  oan-helm
 │                      Consent Manager · aggregation API · partner     │  (vendors upstream + OAN config)
-│                      portal · eSignet · ODK · staff portal           │
+│                      portal · staff portal · (eSignet · ODK on request)│
 ├──────────────────────────────────────────────────────────────────────┤
 │ 1. Commons Base      Postgres · Keycloak · MinIO · Redis · Kafka     │  upstream OpenG2P, unmodified
 └──────────────────────────────────────────────────────────────────────┘
@@ -26,7 +26,8 @@ bump is a change to `versions.env` and a re-render, never a hand-ported compose 
 
 - Docker Desktop (or Docker Engine + Compose v2) with about 8 GB of memory for commons + one registry.
 - Git. On Windows, Git for Windows (its bash runs the scripts; `oan.cmd` wraps it).
-- Nothing else: helm and python run inside a small tools image built on first use.
+- curl (ships with Git for Windows and every Linux/macOS). Nothing else: helm and python run
+  inside a small tools image built on first use.
 
 ## Quick start
 
@@ -106,13 +107,13 @@ never be changed (the platform). The same loop works for every component:
 ## Everyday commands
 
 ```bash
-./oan.sh up                            # start the selection (./oan.sh select); up crop adds a registry
+./oan.sh up                            # start the selection (./oan.sh select); up crop adds crop to it
 ./oan.sh stop farmer | stop all        # stop one registry's containers, or everything; volumes stay
 ./oan.sh rerun farmer-registry-db-seed # run a finished job again (fresh seed)
 ./oan.sh pull                          # fetch newer published images (latest moved on GHCR)
 ./oan.sh ps | ram | logs <container>   # status, memory per project, follow logs
 ./oan.sh render                        # re-render after changing versions.env or values/
-./oan.sh versions                      # move versions.env to the newest published charts
+./oan.sh versions                      # move versions.env to the newest published charts (dashboard pins: by hand)
 ./oan.sh components                    # the catalogue and the current selection
 ./oan.sh down                          # remove containers (volumes kept)
 ```
@@ -127,7 +128,7 @@ Profiles beyond the selection (eSignet, ODK Central, Superset, Kafka, …) start
 | Commons Base | `openg2p-commons-base` from openg2p.github.io/openg2p-helm | newest release candidate in [OpenG2P/versions](https://github.com/OpenG2P/versions) | upstream Docker Hub |
 | Commons Services | `openg2p-commons-services` from the COSS [oan-helm](https://github.com/Centre-for-Open-Societal-Systems/oan-helm) repository | oan-helm `repository/index.yaml` | upstream Docker Hub; the OAN services (Consent Manager, aggregation API, partner portal) and the ETH-OAN Master Data seed from GHCR |
 | Registries | `openg2p-<registry>-registry` from oan-helm | oan-helm index | `ghcr.io/asmitonweb/<product>/<role>:latest` |
-| Dashboards | `<registry>-registry-dashboard` from oan-helm | oan-helm index | `ghcr.io/asmitonweb/<registry>-registry/dashboard:latest` |
+| Dashboards | `farmer-registry-dashboard`, `cropsown-registry-dashboard`, `livestock-registry-dashboard` from oan-helm | oan-helm index | `ghcr.io/asmitonweb/<product>/dashboard:latest` |
 
 Every OAN image is built from COSS `develop` by a mirror workflow on the `asmitonweb` forks (OAN
 tracks a floating `latest` tag); what is not published yet is built from `oan-workspace/`, and
@@ -154,7 +155,10 @@ scripts/gen.py          Kubernetes manifests -> Compose (mapping rules in its do
 scripts/stack.sh        start/stop in Helm release order
 scripts/build.sh        build a component's images from oan-workspace/, as its CI does
 scripts/src.sh          the checkouts in oan-workspace/ (clone, status, dir)
+scripts/onboard.sh      one-shot registration of a service on the running stack (aggregation API)
 scripts/latest.sh       refresh versions.env from the published indexes
+scripts/ui.sh, env.sh   output helpers; .env loading (the shell wins over .env)
+tools/                  the helm + python tools image
 ci/                     the fork mirror-and-publish workflow and its installer
 oan-workspace/          every OAN repository (COSS develop), provisioned by up; yours, git-ignored
 out/, rendered/, .cache/, state/   generated or local; git-ignored

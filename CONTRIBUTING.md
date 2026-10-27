@@ -47,8 +47,9 @@ upstream issue or a metadata-driven replacement; do not add new ones.
 
 The step-by-step version with commands is [docs/developing-a-registry.md](docs/developing-a-registry.md).
 
-1. `./oan.sh dev <component>`: the COSS repository is cloned into `oan-workspace/<repo>` (branch
-   `develop`), the images are built from it and the stack starts.
+1. `./oan.sh dev <component>`: every COSS repository is cloned into `oan-workspace/` (branch
+   `develop`), the component joins the selection, its images are built from the checkout and the
+   stack starts.
 2. Fork the repository on GitHub, make the fork `origin` and COSS `upstream`, and branch from the
    newest `develop`; never commit on `develop`. Plain git, in `oan-workspace/<repo>`.
 3. Edit the source there (or point `OAN_<ID>_SRC` at a checkout of your own).

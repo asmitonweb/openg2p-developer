@@ -1,8 +1,8 @@
 # Architecture
 
-## Three layers, three Helm releases, one Compose project per namespace
+## Four layers of Helm releases, one Compose project per namespace
 
-The shared OAN dev cluster installs three Helm releases in order, each into a namespace:
+The shared OAN dev cluster installs the Helm releases in order, each into a namespace:
 
 | Order | Release | Namespace | Chart | Owner |
 | --- | --- | --- | --- | --- |
@@ -17,7 +17,7 @@ the dashboard API inside release 3 are chart switches. This repository models al
 features (a `--set` on a registry chart) and add-ons (their own chart). `./oan.sh select` picks
 them; the render applies the switches and charts of the selection.
 
-This repository reproduces exactly that. `scripts/render.sh` downloads the three charts at the
+This repository reproduces exactly that. `scripts/render.sh` downloads the charts at the
 versions in `versions.env`, runs `helm template` with `values/<release>.yaml`, and
 `scripts/gen.py` turns each namespace's manifests into `out/<namespace>/compose.yaml`. All
 projects share one Docker network named `openg2p`, so in-cluster names such as
@@ -34,7 +34,13 @@ registration, db-seed). Jobs that already exited 0 are skipped.
 - Deployments and StatefulSets become services; extra containers in a pod share the main
   container's network namespace (`network_mode: service:`).
 - Jobs become one-shot services restarted on failure up to their `backoffLimit`; init containers
-  become one-shot services chained with `service_completed_successfully`.
+  become one-shot services chained with `service_completed_successfully`. Post-install hook jobs
+  (`helm.sh/hook`) depend on the release's workloads and on lower-weight hooks of the same
+  release, get at least 15 attempts, and `stack.sh` starts them last, because what they call
+  (IAM, for example) may live in another project.
+- CronJobs become a service that runs the job's command in a sleep loop at the schedule's
+  interval: the materialized reporting views behind the dashboards stay fresh. A CronJob whose
+  container has no explicit command is skipped and listed in the report.
 - Services become network aliases. When a Service port differs from the container port, the alias
   moves to the nginx gateway (HTTP) or a socat forwarder (TCP), and the backend container gets a
   `--pod` suffix.
@@ -46,7 +52,9 @@ registration, db-seed). Jobs that already exited 0 are skipped.
 - Each Helm subchart becomes a Compose profile, so `up esignet` or `up odk-central` starts only
   that part.
 - Generated secrets are pinned in `state/secrets.json` so a re-render never rotates a password the
-  databases already hold.
+  databases already hold. Only token-like values (letters, digits, `+/=_-`) are pinned; URLs,
+  JSON and certificate blocks follow the chart (and `extras/`) on every render. Delete an entry
+  from the file to take the chart's value again.
 
 Two translations are specific to the OAN charts, which are pinned to the shared dev cluster:
 

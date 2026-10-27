@@ -7,7 +7,7 @@
 
 image:
   # ECR-style path on purpose: scripts/gen.py remaps it like every other private image to
-  # <OAN_IMAGE_PREFIX>/farmer-registry/dashboard:<OAN_IMAGE_TAG> (GHCR pull or local build).
+  # <OAN_IMAGE_PREFIX>/livestock-registry/dashboard:<OAN_IMAGE_TAG> (GHCR pull or local build).
   repository: 379220350808.dkr.ecr.ap-south-1.amazonaws.com/openg2p/livestock-registry/dashboard
   tag: latest
 
