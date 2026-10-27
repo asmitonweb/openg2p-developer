@@ -28,7 +28,12 @@ install() {  # install <repo> <product> <branch> <role=dockerfile:context>...
     echo "forking $ORG/$repo"; gh repo fork "$ORG/$repo" --clone=false >/dev/null
     for _ in 1 2 3 4 5 6; do gh repo view "$fork" >/dev/null 2>&1 && break; sleep 5; done
   fi
-  [ "$(gh api "repos/$fork" --jq '.parent.full_name // ""')" = "$ORG/$repo" ] || { echo "  $fork exists but is not a fork of $ORG/$repo; not touching it" >&2; return 1; }
+  # A repository that already carries oan-ci is an installed mirror (a fork, or a plain repository
+  # that mirrors upstream when the fork name was taken). Anything else must be a fork of upstream.
+  if ! gh api "repos/$fork/branches/oan-ci" >/dev/null 2>&1 \
+     && [ "$(gh api "repos/$fork" --jq '.parent.full_name // ""')" != "$ORG/$repo" ]; then
+    echo "  $fork exists but is neither a fork of $ORG/$repo nor an installed mirror; not touching it" >&2; return 1
+  fi
 
   matrix=""
   for spec in "$@"; do
@@ -84,8 +89,10 @@ for id in "$@"; do
   [ "$product" != - ] || { echo "$id ships no image; skipped"; continue; }
   by_repo[$repo]+="$(role_specs "$id" | tr '\n' ' ')"; product_of[$repo]=$product
 done
+failed=0
 for repo in "${!by_repo[@]}"; do
   echo "$repo:"
   # shellcheck disable=SC2086
-  install "$repo" "${product_of[$repo]}" develop ${by_repo[$repo]}
+  install "$repo" "${product_of[$repo]}" develop ${by_repo[$repo]} || failed=1
 done
+exit $failed
