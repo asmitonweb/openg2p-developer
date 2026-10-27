@@ -85,8 +85,9 @@ Profiles beyond the default bundle (eSignet, ODK Central, Superset, Kafka, …) 
 ```
 
 `dev` sets `OAN_IMAGE_SOURCE=local` in `.env`, so every later command builds from `src/`. The
-checkout has your fork as `origin` and the COSS repository as `upstream`; `gh` (GitHub CLI) creates
-the fork when you have none. The full loop, test commands, branch and commit conventions and what
+checkout has the COSS repository as `upstream` and your fork as `origin` when one is found
+(`gh` logged in, or `OAN_GITHUB_USER` in `.env`); without a fork, `origin` is COSS itself and
+`./oan.sh src fork <registry> <you>` switches later. A fork is recommended, not required. The full loop, test commands, branch and commit conventions and what
 must never be changed are in [docs/developing-a-registry.md](docs/developing-a-registry.md).
 
 ## Where things come from

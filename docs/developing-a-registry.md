@@ -19,8 +19,15 @@ images, set `OAN_IMAGE_SOURCE=ghcr` in `.env` and run `./oan.sh up <registry>`.
 
 ## One-time setup
 
-1. Install [GitHub CLI](https://cli.github.com) and log in: `gh auth login`. Without it the
-   scripts still work, but you have to create the fork and set the `origin` remote yourself.
+1. Decide where your branches will be pushed. A fork is **not required**; `clone` picks `origin`
+   in this order:
+   - [GitHub CLI](https://cli.github.com) logged in (`gh auth login`): your fork, created for you
+     if it does not exist;
+   - `OAN_GITHUB_USER=<you>` in `.env` and a fork at `github.com/<you>/<repo>` (create it with
+     the **Fork** button on the COSS repository): that fork, no gh needed;
+   - neither: the COSS repository itself. This works if you have push rights there (COSS
+     maintainers do). Otherwise create a fork in the browser later and run
+     `./oan.sh src fork <registry> <you>`; it only re-points `origin`, your branches stay.
 2. Make sure your Git has no CRLF conversion for these checkouts. The scripts clone with
    `core.autocrlf=false`; a CRLF checkout breaks every container entrypoint, and `build` refuses
    to build one.
@@ -39,8 +46,9 @@ src/farmer-registry/
   develop   tracks upstream/develop; never commit on it
 ```
 
-The fork is created with `gh repo fork` when you do not have one yet. If you have push rights on
-the COSS repository you may still work from a fork; it keeps the upstream branch list clean.
+With push rights on the COSS repository you may push branches there directly (`origin` =
+`upstream`); a fork is still the recommended default because it keeps the shared branch list
+clean. `./oan.sh src status` shows which one you have.
 
 To work from a checkout you already have, point `OAN_FARMER_SRC` (`OAN_CROP_SRC`,
 `OAN_LIVE_SRC`) or `OAN_SRC_DIR` at it in `.env`. The scripts never modify a checkout they did not
@@ -150,4 +158,5 @@ people never share a `src/` folder; each clone has its own fork as `origin`.
 | `reload` says `nothing rendered` | you are in ghcr mode or never started this registry | `./oan.sh dev <registry>` |
 | `rebase stopped on a conflict` | your branch and upstream changed the same file | resolve in `src/<repo>`, `git rebase --continue`, then `./oan.sh reload` |
 | images rebuilt but the UI shows the old behaviour | browser cache for the staff UI, or the seed job was not re-run | hard reload the page; `./oan.sh rerun <release>-db-seed` |
-| `gh: not logged in` during `src clone` | GitHub CLI without a session | `gh auth login`, or set `origin` to your fork by hand |
+| `no fork found: origin is Centre-for-Open-Societal-Systems/… itself` | no gh session and no `OAN_GITHUB_USER` fork | fine with push rights; otherwise fork in the browser, then `./oan.sh src fork <registry> <you>` |
+| `src pr` fails on push | `origin` is COSS and you have no push rights | same: fork in the browser, `./oan.sh src fork <registry> <you>`, run `pr` again |

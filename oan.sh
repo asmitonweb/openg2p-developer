@@ -4,7 +4,7 @@
 #
 #   ./oan.sh up <farmer|crop|live|da>     one command: tools image, render, images, start
 #   ./oan.sh dev <registry>               the same, built from your source checkout (fork) in src/
-#   ./oan.sh src <clone|branch|sync|status|pr> <registry> ...   fork, branch, sync, pull request
+#   ./oan.sh src <clone|fork|branch|sync|status|pr> <registry> ...   checkout, fork, branch, sync, PR
 #   ./oan.sh reload <registry> [role...]  rebuild roles from src/ and restart what runs them
 #   ./oan.sh pull <registry>              fetch the newest published images (latest moved on GHCR)
 #   ./oan.sh build <registry> [role...]   (re)build the registry's images from source (src/<repo>)
