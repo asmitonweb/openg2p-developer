@@ -131,14 +131,19 @@ up() {
   mapfile -t ns_list < <(cut -f1 <<<"$sel" | sort -u)
   prepare
 
+  # Databases first: Keycloak needs the database the postgres-init job creates, and MinIO's init
+  # container waits for Keycloak, so `up -d` on all of them at once would never return.
+  local dbs="postgresql redis redis-auth"
   echo "infrastructure: $(cut -f2 <<<"$infra" | tr '\n' ' ')+ gateway"
-  mapfile -t svc < <(services "$LONG" "$infra")
+  mapfile -t svc < <(services "$LONG" "$(awk -F'\t' -v i=" $dbs " 'index(i, " "$2" ")' <<<"$infra")")
   by_ns up -d -- gateway "${svc[@]}"
   # its conf is a bind-mounted file: a re-render changes it without recreating the container
   docker exec gateway nginx -s reload >/dev/null 2>&1 || true
 
   mapfile -t svc < <(ns_jobs postgres-init "${ns_list[@]}")
   run_jobs "postgres-init" "${svc[@]}"
+  mapfile -t svc < <(services "$LONG" "$(awk -F'\t' -v i=" $dbs " '!index(i, " "$2" ")' <<<"$infra")")
+  [ ${#svc[@]} -eq 0 ] || by_ns up -d -- "${svc[@]}"
   mapfile -t svc < <(ns_jobs keycloak-init "${ns_list[@]}" | grep '^commons-keycloak-init-' || true)
   run_jobs "keycloak-init (base realm + admin)" "${svc[@]}"
   mapfile -t svc < <(ns_jobs keycloak-init "${ns_list[@]}" | grep -v '^commons-keycloak-init-' || true)
