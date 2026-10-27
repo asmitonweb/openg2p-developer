@@ -21,9 +21,12 @@ registry:
       CSP_SRC_IMG: 'self blob: data: http://minio-api.openg2p.localtest.me https://tile.openstreetmap.org'
       CSP_SRC_CONNECT: 'self https://api.open-meteo.com'
   dbSeed:
-    # Geography comes from Master Data (ETH-OAN pack); sample farmers are built from it.
+    # Geography comes from Master Data (ETH-OAN pack). Sample farmers stay off, as in the COSS
+    # chart: the upstream loader (/seed/load_sample_data.py in openg2p-farmer-registry-db-seed)
+    # sends the PREFIX display text ("Mr"/"Ms") while every country pack codes it MR/MS, so with
+    # REGISTRY_CORE_VALIDATE_ATTRIBUTE_VALUES=true the first household is rejected (REQ-VAL-001).
     loadGeoData: false
-    loadSampleData: true
+    loadSampleData: false
     loadImages: false
     loadTemplates: true
   # The sanity suite runs against the shared cluster after a deploy; locally it only costs an image.

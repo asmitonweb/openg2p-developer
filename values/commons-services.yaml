@@ -16,6 +16,11 @@ master-data:
   # The dev cluster was seeded by hand and ships the job disabled; a fresh laptop needs it.
   geoSeed:
     enabled: true
+    # The COSS chart pins publishInitial false (the dev cluster was seeded by hand and approved in
+    # Master Data). On a fresh database there is nothing to protect: without this the pack lands as
+    # a DRAFT geography plus 74 draft code lists, the legacy geo tables stay empty, and every
+    # registry seed that reads them fails (farmer: "list index out of range" in load_sample_data).
+    publishInitial: true
   masterDataAPI:
     catalogue:
       public:

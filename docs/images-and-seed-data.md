@@ -87,3 +87,34 @@ commit. The registries' sanity-tests images are not built; the sanity jobs are d
   the whole tree.
 - Seed images are built on the upstream seed image, which already contains an `openg2p-data`
   clone; only the OAN packs and the registry's own seed differ.
+
+### Master Data is a catalogue: drafts are invisible until published
+
+Master Data versions everything (maker-checker). The pack loader creates a DRAFT geography and
+one draft per code list; only *publishing* fills the legacy tables (`g2p_geo_levels`,
+`g2p_geo_level_values`, the attribute value tables) that the registries and their seeds read.
+The COSS commons-services chart sets `geoSeed.publishInitial: false` because the dev cluster was
+seeded once by hand and approved in the Master Data UI (role `MASTER_DATA_APPROVER`). A fresh
+database has nothing to protect, so `values/commons-services.yaml` sets `publishInitial: true`;
+the loader's own default is the same. Symptoms when it is missing: the geo-seed log ends with
+`geography: version 1 left as DRAFT` and `geography version in effect: -`, Master Data shows
+74 lists awaiting approval, and the farmer seed dies with `list index out of range` in
+`load_geo_indexes` (empty leaf list). Re-running the loader does not help: it refuses to touch an
+open draft. Either approve the drafts in Master Data or publish them with the functions the loader
+uses (`g2p_catalogue_publish_geo`, `g2p_catalogue_publish_list` with `p_allow_draft = true`).
+
+Later loads of a *changed* pack still produce drafts for approval, as on the cluster;
+`geoSeed.autoPublish` would publish those too and is development-only.
+
+### Sample farmers are off
+
+The farmer db-seed can submit sample households through the intake API
+(`dbSeed.loadSampleData`). The loader is upstream's (`/seed/load_sample_data.py` in
+`openg2p/openg2p-farmer-registry-db-seed`) and sends the PREFIX *display* text (`Mr`, `Ms`), while
+every country pack codes the list as `MR`, `MRS`, `MISS`, `MS`. OAN validates attribute values
+against Master Data (`REGISTRY_CORE_VALIDATE_ATTRIBUTE_VALUES=true`), so the first household is
+rejected with `REQ-VAL-001`. The COSS chart ships `loadSampleData: false` for the same reason, and
+so does `values/farmer.yaml`. The fix belongs upstream (the loader must send codes); until then,
+create farmers through the staff UI or ODK. Note also that the OAN seed overlay prefers sample
+people from Master Data (`g2p_sample_individuals`), which are only there when the Master Data
+seed loads the pack's `samples/` (`geoSeed.load.samples`, off in the COSS chart).
