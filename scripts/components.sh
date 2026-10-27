@@ -6,6 +6,7 @@
 #               service    part of the commons-services chart, switched on by a Helm value
 #               feature    part of a registry chart, switched on by a Helm value (needs that registry)
 #               addon      its own oan-helm chart rendered into a registry's project
+#               source     a repository only (charts, data): cloned into oan-workspace/, never run
 #   3 chart     oan-helm chart (registry, addon) or '-' (lives in another component's chart)
 #   4 version   variable in versions.env holding the chart version, or '-'
 #   5 release   Helm release name (resource names derive from it); for service/feature: the chart it belongs to
@@ -36,6 +37,9 @@ COMPONENTS=(
   "crop-dashboard|addon|cropsown-registry-dashboard|CROP_DASHBOARD_VERSION|cropsown-registry-dashboard|crop|oan_cropsown_dashboard|cropsown-registry|Dockerfile|dashboard|-|crop-dashboard-api|Crop sown dashboard (Next.js)"
   "live-dashboard-api|feature|-|-|openg2p-livestock-registry|live|livestock-registry-dashbaord-api|livestock-registry|Dockerfile|dashboard-api|dashboardApi.enabled=true|live|Livestock dashboard API"
   "live-dashboard|addon|livestock-registry-dashboard|LIVE_DASHBOARD_VERSION|livestock-registry-dashboard|live|oan_livestock_dashboard|livestock-registry|Dockerfile|dashboard|-|live-dashboard-api|Livestock dashboard (Next.js)"
+  # source: code a developer needs next to the stack; nothing to run or select
+  "oan-helm|source|-|-|-|-|oan-helm|-|-|-|-|-|Helm charts of every OAN release (what this stack renders)"
+  "openg2p-data|source|-|-|-|-|openg2p-data|-|-|-|-|-|Master Data country packs (ETH-OAN) and the seed image"
 )
 # What `./oan.sh up` starts when nothing is selected yet.
 DEFAULT_COMPONENTS="farmer"

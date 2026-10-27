@@ -9,10 +9,12 @@ extension package.
 
 ## What `up` and `dev` give you
 
-`./oan.sh up` renders the selected components (`./oan.sh select`), **clones their source from
-COSS `develop` into `oan-workspace/<repo>`**, pulls the published images and starts everything.
-The code is there from the first run, next to the running system, whether or not you intend to
-change it.
+`./oan.sh up` renders the selected components (`./oan.sh select`), **provisions every OAN
+repository from COSS `develop` into `oan-workspace/<repo>`**, pulls the published images and
+starts the selection. The whole codebase is there from the first run, next to the running system,
+whether or not you intend to change it: the registries, Consent Manager (with the partner
+portal), the aggregation API, the dashboards and their APIs, plus oan-helm (the charts this stack
+renders) and openg2p-data (the Master Data packs). `./oan.sh src status` lists them.
 
 | Mode | `OAN_IMAGE_SOURCE` | Images | For |
 | --- | --- | --- | --- |
@@ -26,10 +28,14 @@ published images, set `OAN_IMAGE_SOURCE=ghcr` in `.env` and run `./oan.sh up`.
 
 ```
 oan-workspace/
-  farmer-registry/          origin = https://github.com/Centre-for-Open-Societal-Systems/farmer-registry, branch develop
-  consent-management/
-  oan_farmerregistry_dashboard/
-  ...                       one folder per COSS repository of the selected components
+  farmer-registry/                 origin = https://github.com/Centre-for-Open-Societal-Systems/<repo>, branch develop
+  cropsown-regsitry/  livestock-registry/  da-registry/
+  consent-management/              Consent Manager api, ui, sanity and the partner portal
+  oan-aggregation-api/
+  farmer-registry-dashboard-api/  cropsown-registry-dashboard-api/  livestock-registry-dashbaord-api/
+  oan_farmerregistry_dashboard/   oan_cropsown_dashboard/           oan_livestock_dashboard/
+  oan-helm/                        charts (source kind: cloned, never run)
+  openg2p-data/                    Master Data packs (source kind)
 ```
 
 The scripts never modify a checkout that exists: no fetch, no reset, no branch switch. Git in

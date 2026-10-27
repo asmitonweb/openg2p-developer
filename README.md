@@ -39,15 +39,18 @@ cd oan-developer
 `dev farmer` does everything a developer needs for the farmer registry:
 
 1. renders the charts into Compose projects;
-2. clones the COSS `farmer-registry` repository (`develop`) into `oan-workspace/farmer-registry`;
-3. builds the registry's images from that checkout (about 15 minutes the first time) and pulls
-   the commons images;
+2. clones **every OAN repository** (`develop`) into `oan-workspace/`: the registries, Consent
+   Manager, the aggregation API, the dashboards and their APIs, oan-helm and openg2p-data, so the
+   whole codebase is next to the running system whatever you selected;
+3. builds the registry's images from `oan-workspace/farmer-registry` (about 15 minutes the first
+   time) and pulls the commons images;
 4. starts everything in Helm release order: infrastructure, database init jobs, Keycloak init,
    the services, and finally the registry's seed job.
 
 A second run takes seconds. `./oan.sh up` does the same with the **published** images
-(`ghcr.io/asmitonweb/...:latest`, rebuilt hourly from COSS `develop`) and still clones the
-source, so the code is always next to the running system.
+(`ghcr.io/asmitonweb/...:latest`, rebuilt hourly from COSS `develop`) and still provisions the
+workspace. Existing checkouts are never touched: branches, remotes and uncommitted work in
+`oan-workspace/` are yours.
 
 Pick what runs with the checklist, in the terminal:
 
@@ -154,7 +157,7 @@ scripts/build.sh        build a component's images from oan-workspace/, as its C
 scripts/src.sh          the checkouts in oan-workspace/ (clone, status, dir)
 scripts/latest.sh       refresh versions.env from the published indexes
 ci/                     the fork mirror-and-publish workflow and its installer
-oan-workspace/          source of the selected components (COSS develop); yours, git-ignored
+oan-workspace/          every OAN repository (COSS develop), provisioned by up; yours, git-ignored
 out/, rendered/, .cache/, state/   generated or local; git-ignored
 ```
 

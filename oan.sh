@@ -116,7 +116,10 @@ ensure_images() {  # ensure_images <ns...>: pull (with progress) or build every 
 # ── interactive checklist ──────────────────────────────────────────────────
 select_menu() {
   local ids=() kinds=() titles=() checked=() r i n cur=0 key saved=" $(selected_components | tr '\n' ' ') "
-  for r in "${COMPONENTS[@]}"; do ids+=("${r%%|*}"); kinds+=("$(cut -d'|' -f2 <<<"$r")"); titles+=("$(cut -d'|' -f13 <<<"$r")"); done
+  for r in "${COMPONENTS[@]}"; do
+    [ "$(cut -d'|' -f2 <<<"$r")" != source ] || continue   # code only: always in the workspace, nothing to run
+    ids+=("${r%%|*}"); kinds+=("$(cut -d'|' -f2 <<<"$r")"); titles+=("$(cut -d'|' -f13 <<<"$r")")
+  done
   n=${#ids[@]}
   for ((i = 0; i < n; i++)); do case "$saved" in *" ${ids[i]} "*) checked[i]=1 ;; *) checked[i]=0 ;; esac; done
   check() {  # check <i>: tick it and what it requires
@@ -227,8 +230,8 @@ up() {
   [ ${#sel[@]} -gt 0 ] || { echo "nothing selected: ./oan.sh select" >&2; exit 1; }
   UI_T0=$SECONDS
   rendered_for "${sel[@]}" || scripts/render.sh "${sel[@]}"
-  step "Workspace: the components' source in ${OAN_SRC_DIR:-oan-workspace}/"
-  scripts/src.sh clone "${sel[@]}"
+  step "Workspace: every OAN repository in ${OAN_SRC_DIR:-oan-workspace}/"
+  scripts/src.sh clone
   step "Images"
   mapfile -t ns < <(namespaces_of "${sel[@]}")
   ensure_images "${ns[@]}"
