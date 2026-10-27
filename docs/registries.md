@@ -7,8 +7,10 @@
 | `live` | `openg2p-livestock-registry` | `livestock-registry` | `livestock-registry` | http://livestock-registry.openg2p.localtest.me | runs; chart marked not promotion-ready |
 | `da` | `openg2p-da-registry` | `da-registry` | `da-registry` | — | placeholder: empty repository, chart has every component disabled |
 
-The table is `scripts/registries.sh`; adding a registry means one line there, one
-`<ID>_VERSION` in `versions.env`, one `values/<id>.yaml`, and optionally `overrides/<id>.yaml`.
+The table is the `registry` kind in `scripts/components.sh`; adding a registry means one line
+there, one `<ID>_VERSION` in `versions.env`, one `values/<id>.yaml`, and optionally
+`overrides/<id>.yaml`. Its dashboard API (`<id>-dashboard-api`, a chart switch) and dashboard
+(`<id>-dashboard`, an add-on chart) are separate components that require it.
 
 Each registry is its own Compose project (`out/<id>/compose.yaml`) and can run alongside the
 others on the shared commons. Per registry you get the platform services (`staff-portal-api`,
@@ -55,14 +57,15 @@ the file disappears and the note stops appearing.
 ## Developing against a registry
 
 ```bash
-./oan.sh up farmer                                   # clones src/farmer-registry on first use
-# edit src/farmer-registry/oan-extension/...
-./oan.sh build farmer db-seed && ./oan.sh rerun farmer-registry-db-seed     # metadata / seed
-./oan.sh build farmer staff-api && docker compose -f out/farmer/compose.yaml -f overrides/farmer.yaml up -d farmer-registry-staff-portal-api--pod
+./oan.sh dev farmer                                  # clones oan-workspace/farmer-registry, builds, starts
+# edit oan-workspace/farmer-registry/oan-extension/...
+./oan.sh reload farmer db-seed && ./oan.sh rerun farmer-registry-db-seed    # metadata / seed
+./oan.sh reload farmer staff-api                     # rebuild + restart the staff API
 ```
 
-To build from your own checkout rather than `src/`, set `OAN_FARMER_SRC=/path/to/farmer-registry`
-(`OAN_CROP_SRC`, `OAN_LIVE_SRC`) in `.env`. The script never modifies an existing checkout.
+To build from your own checkout rather than `oan-workspace/`, set `OAN_FARMER_SRC=/path/to/farmer-registry`
+(`OAN_CROP_SRC`, `OAN_LIVE_SRC`) in `.env`. The scripts never modify an existing checkout. The
+full loop is in [developing-a-registry.md](developing-a-registry.md).
 
 ## DA registry
 

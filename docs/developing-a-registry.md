@@ -1,96 +1,86 @@
-# Developing a registry
+# Developing a component
 
-How to change an OAN registry (farmer, crop, live, da) with this stack: from a fork of the COSS
-repository, through a running local build of your branch, to a pull request on COSS `develop`.
-The rule behind every step is in [CONTRIBUTING.md](../CONTRIBUTING.md): the OpenG2P platform is
-never modified; a registry is extended through metadata, configuration and its extension package.
+How to change an OAN registry (farmer, crop, live), a commons service (Consent Manager,
+aggregation API, partner portal) or a dashboard with this stack: from the COSS source in
+`oan-workspace/`, through a running local build of your change, to a pull request on COSS
+`develop`. The rule behind every step is in [CONTRIBUTING.md](../CONTRIBUTING.md): the OpenG2P
+platform is never modified; a registry is extended through metadata, configuration and its
+extension package.
 
-## The two image sources
+## What `up` and `dev` give you
 
-| Mode | `OAN_IMAGE_SOURCE` | Registry images | For |
+`./oan.sh up` renders the selected components (`./oan.sh select`), **clones their source from
+COSS `develop` into `oan-workspace/<repo>`**, pulls the published images and starts everything.
+The code is there from the first run, next to the running system, whether or not you intend to
+change it.
+
+| Mode | `OAN_IMAGE_SOURCE` | Images | For |
 | --- | --- | --- | --- |
-| **use** | `ghcr` (default) | `ghcr.io/asmitonweb/<product>/<role>:latest`, built every 30 minutes from COSS `develop` | running a registry, testing someone else's change, demos |
-| **develop** | `local` | `oan/<product>/<role>:local`, built from the checkout in `src/<repo>` | changing a registry |
+| **use** | `ghcr` (default) | `ghcr.io/asmitonweb/<product>/<role>:latest`, built hourly from COSS `develop` | running, testing someone else's change, demos |
+| **develop** | `local` | `oan/<product>/<role>:local`, built from `oan-workspace/<repo>` | changing a component |
 
-`./oan.sh dev <registry>` switches to develop mode: it writes `OAN_IMAGE_SOURCE=local` to `.env`,
-creates the source checkout if it is missing, builds the images from it and starts the stack.
-Commons (layers 1 and 2) are the same published images in both modes. To go back to published
-images, set `OAN_IMAGE_SOURCE=ghcr` in `.env` and run `./oan.sh up <registry>`.
-
-## One-time setup
-
-1. Decide where your branches will be pushed. A fork is **not required**; `clone` picks `origin`
-   in this order:
-   - [GitHub CLI](https://cli.github.com) logged in (`gh auth login`): your fork, created for you
-     if it does not exist;
-   - `OAN_GITHUB_USER=<you>` in `.env` and a fork at `github.com/<you>/<repo>` (create it with
-     the **Fork** button on the COSS repository): that fork, no gh needed;
-   - neither: the COSS repository itself. This works if you have push rights there (COSS
-     maintainers do). Otherwise create a fork in the browser later and run
-     `./oan.sh src fork <registry> <you>`; it only re-points `origin`, your branches stay.
-2. Make sure your Git has no CRLF conversion for these checkouts. The scripts clone with
-   `core.autocrlf=false`; a CRLF checkout breaks every container entrypoint, and `build` refuses
-   to build one.
-3. First start, which also forks and clones (about 15 minutes for the image builds):
-
-```bash
-./oan.sh dev farmer          # Windows: oan.cmd dev farmer
-```
-
-What `dev` does to the source:
+`./oan.sh dev <component>` switches to develop mode: it adds the component to the selection,
+writes `OAN_IMAGE_SOURCE=local` to `.env`, builds the images from the workspace and starts the
+stack. Commons (layers 1 and 2) are the same published images in both modes. To go back to
+published images, set `OAN_IMAGE_SOURCE=ghcr` in `.env` and run `./oan.sh up`.
 
 ```
-src/farmer-registry/
-  origin    https://github.com/<you>/farmer-registry             your fork, where branches are pushed
-  upstream  https://github.com/Centre-for-Open-Societal-Systems/farmer-registry   read-only for you
-  develop   tracks upstream/develop; never commit on it
+oan-workspace/
+  farmer-registry/          origin = https://github.com/Centre-for-Open-Societal-Systems/farmer-registry, branch develop
+  consent-management/
+  oan_farmerregistry_dashboard/
+  ...                       one folder per COSS repository of the selected components
 ```
 
-With push rights on the COSS repository you may push branches there directly (`origin` =
-`upstream`); a fork is still the recommended default because it keeps the shared branch list
-clean. `./oan.sh src status` shows which one you have.
-
-To work from a checkout you already have, point `OAN_FARMER_SRC` (`OAN_CROP_SRC`,
-`OAN_LIVE_SRC`) or `OAN_SRC_DIR` at it in `.env`. The scripts never modify a checkout they did not
-create, apart from the git operations you ask for (`branch`, `sync`, `pr`).
+The scripts never modify a checkout that exists: no fetch, no reset, no branch switch. Git in
+`oan-workspace/<repo>` is yours. To use a checkout you already have elsewhere, point
+`OAN_<ID>_SRC` (`OAN_FARMER_SRC`, `OAN_CONSENT_MANAGER_SRC`, …) or `OAN_SRC_DIR` at it in `.env`.
+On Windows the clones are made with `core.autocrlf=false`; a CRLF checkout breaks every container
+entrypoint and `build` refuses it.
 
 ## The change loop
 
 ```bash
-./oan.sh src branch farmer odk-geo-codes     # 1. branch from the newest upstream develop
-#   ... edit src/farmer-registry ...          # 2. metadata, widgets, extension package, seeds
+./oan.sh dev farmer                          # 1. farmer from source (first time: ~15 min of image builds)
+cd oan-workspace/farmer-registry
+git switch -c odk-geo-codes                  # 2. your branch (see "Git flow" below)
+#   ... edit metadata, widgets, extension package, seeds ...
+cd -
 ./oan.sh reload farmer staff-api             # 3. rebuild the touched roles, restart their services
 ./oan.sh reload farmer db-seed               #    metadata or seed change: rebuild, then
 ./oan.sh rerun farmer-registry-db-seed       #    re-run the seed job (metadata is applied as a whole tree)
 ./oan.sh logs farmer-registry-staff-portal-api--pod   # container names = service names (./oan.sh ps)
-./oan.sh src status                          # 4. what branch, how far from upstream, uncommitted files
-git -C src/farmer-registry add -p && git -C src/farmer-registry commit
-./oan.sh src sync farmer                     # 5. rebase onto upstream develop before you push
-./oan.sh src pr farmer                       # 6. push to your fork, open the PR on COSS develop
+./oan.sh src status                          # 4. every checkout: branch, distance from develop, dirty files
 ```
 
-### Which role runs what
+`reload` finds the services from the compose file, builds only the roles you name (all roles of
+the component when you name none) and recreates the long-running services. Jobs are never
+restarted automatically: `reload` prints the `rerun` command for them.
 
-| Role | Service(s) in the farmer project | Rebuild when you change |
+### Which role runs what (farmer; crop and live use the same roles with their own release prefix)
+
+| Role | Service(s) | Rebuild when you change |
 | --- | --- | --- |
 | `staff-api` | `farmer-registry-staff-portal-api--pod` | the extension package (`*-extension/src`), API behaviour, Python dependencies |
 | `partner-api` | `farmer-registry-partner-api--pod` | partner-facing API, connector code |
 | `celery` | `farmer-registry-celery-worker`, `farmer-registry-celery-beat-producer` | tasks, schedules |
 | `db-seed` | `farmer-registry-db-seed` (job), `farmer-registry-fr-reporting-views` (job) | register metadata, widgets, AWE metadata, seeds, reporting views |
 | `staff-ui` | `farmer-registry-staff-portal-ui--pod` | UI widgets and translations |
+| `dashboard-api` | `farmer-registry-dashboard-api` (component `farmer-dashboard-api`) | chart queries over the reporting views |
+| `dashboard` | `farmer-registry-dashboard--pod` (component `farmer-dashboard`) | the Next.js dashboard |
 
-`reload` finds the services from the compose file, so the table is only an orientation. Crop and
-livestock use the same roles with their own release prefix (`cropsown-registry-…`,
-`livestock-registry-…`). Jobs are never restarted automatically: `reload` prints the `rerun`
-command for them.
+Commons services: `consent-manager-api` → `commons-services-cm-api--pod` and `commons-services-cm-partner-api--pod`,
+`consent-manager-ui` → `commons-services-cm-ui--pod`, `consent-partner-portal` → `commons-services-cm-partner-portal--pod`,
+`aggregation-api` → `commons-services-aggregation-api--pod`. `./oan.sh components` lists every id.
 
 ### Tests
 
-Run the registry's own tests before you open a pull request. They live in the registry repository
-and its CI (`.github/workflows/checks.yml`, `Jenkinsfile`) is the reference for what is checked:
+Run the repository's own tests before you open a pull request. They live in the repository and
+its CI (`.github/workflows/checks.yml`, `Jenkinsfile`) is the reference for what is checked. For
+the farmer registry:
 
 ```bash
-cd src/farmer-registry
+cd oan-workspace/farmer-registry
 python -m pytest -q                                     # pytest.ini: tests/unit, PYTHONPATH farmer-extension/src
 python -m ruff check --select E9,F63,F7,F82 oan-extension/src oan-extension/tests
 bash ci/validation/validate.sh                          # schema / metadata / delivery-boundary validation
@@ -104,31 +94,64 @@ docker run --rm -v "$PWD:/repo:ro" -w /repo/oan-extension --entrypoint sh oan/fa
   -c 'pip install --quiet pytest && python -m pytest -q -p no:cacheprovider tests'
 ```
 
-Crop and livestock ship a `docker/sanity-tests/Dockerfile` for the same purpose. A metadata change is tested by `./oan.sh rerun <release>-db-seed` finishing with
-exit code 0 and the form behaving as intended in the staff UI; add a schema or sanity test for it
-in the repository's test folder.
+Crop and livestock ship a `docker/sanity-tests/Dockerfile` for the same purpose. A metadata change
+is tested by `./oan.sh rerun <release>-db-seed` finishing with exit code 0 and the form behaving as
+intended in the staff UI; add a schema or sanity test for it in the repository's test folder.
 
-## Branches, commits, pull requests
+## Git flow: fork, branch, pull request
 
-- **Branch names** describe the change: `odk-geo-codes`, `intake-photo-section`,
-  `livestock-species-list`. No ticket keys, no personal prefixes.
-- **One change per branch.** A metadata change and an unrelated extension fix are two pull
-  requests; reviewers and the delivery pipeline treat them independently.
-- **Commits** have a short imperative subject (under 72 characters) and a body that says what
-  changed and why, not how it was produced. No ticket keys, no tool attributions, no
-  `Co-Authored-By` trailers for tools. Squash fix-up commits before the PR, or ask for a squash merge.
-- **Never commit on `develop`**, and never push to `upstream`. `./oan.sh src sync` keeps your
-  fork's `develop` equal to upstream's and rebases your branch onto it; resolve conflicts in
-  `src/<repo>` and continue the rebase there.
-- **Pull requests** target the COSS repository's `develop` (`./oan.sh src pr` sets base and head).
-  Describe the behaviour and how you verified it against the local stack, list the metadata or
-  roles touched, and link the upstream issue if the change works around a platform gap. The
-  repository's CI must be green. The delivery pipeline promotes `develop → testing → staging → release`.
-- **A chart change** (new env var, job, volume) goes to [oan-helm](https://github.com/Centre-for-Open-Societal-Systems/oan-helm)
-  in the same review cycle. Once the chart is released, bump its pin in `versions.env` here.
-- **Merged?** `./oan.sh src sync <registry>` brings the merged commit back, and within 30 minutes
-  the published `:latest` image carries it, so `OAN_IMAGE_SOURCE=ghcr` users get it on their next
-  `./oan.sh pull <registry>`.
+The stack clones the COSS repository itself and stops there; the rest is ordinary git and GitHub,
+done by you. The expected flow for someone without push rights on the COSS repository:
+
+1. **Fork** the repository on GitHub (the Fork button on `Centre-for-Open-Societal-Systems/<repo>`),
+   once. Then, in `oan-workspace/<repo>`:
+
+   ```bash
+   git remote rename origin upstream                      # COSS: fetched from, never pushed to
+   git remote add origin https://github.com/<you>/<repo>.git
+   git fetch upstream develop
+   ```
+
+   With push rights on COSS you may skip the fork and push branches to `origin` directly; a fork
+   still keeps the shared branch list clean.
+
+2. **Branch** from the newest `develop`, one change per branch:
+
+   ```bash
+   git fetch upstream develop && git switch -c odk-geo-codes upstream/develop
+   ```
+
+   Branch names describe the change (`odk-geo-codes`, `intake-photo-section`,
+   `livestock-species-list`): no ticket keys, no personal prefixes. Never commit on `develop`.
+
+3. **Commit** with a short imperative subject (under 72 characters) and a body that says what
+   changed and why, not how it was produced. No ticket keys, no tool attributions, no
+   `Co-Authored-By` trailers for tools. Squash fix-up commits before the PR, or ask for a squash merge.
+
+4. **Rebase** before you push, resolve conflicts in the checkout, then `./oan.sh reload` to run
+   the rebased code:
+
+   ```bash
+   git fetch upstream develop && git rebase upstream/develop
+   ```
+
+5. **Push and open the pull request** against the COSS repository's `develop`:
+
+   ```bash
+   git push -u origin odk-geo-codes
+   # then on GitHub: Compare & pull request, base develop (or: gh pr create --repo Centre-for-Open-Societal-Systems/<repo> --base develop)
+   ```
+
+   Describe the behaviour and how you verified it against the local stack, list the metadata or
+   roles touched, link the upstream issue if the change works around a platform gap. The
+   repository's CI must be green. The delivery pipeline promotes `develop → testing → staging → release`.
+
+6. **A chart change** (new env var, job, volume) goes to [oan-helm](https://github.com/Centre-for-Open-Societal-Systems/oan-helm)
+   in the same review cycle. Once the chart is released, bump its pin in `versions.env` here.
+
+7. **Merged?** `git fetch upstream develop && git merge --ff-only upstream/develop` on your
+   `develop`, and within an hour the published `:latest` image carries it, so `ghcr` users get it
+   on their next `./oan.sh pull`.
 
 ## What you must not do
 
@@ -140,23 +163,21 @@ The complete list is in [CONTRIBUTING.md](../CONTRIBUTING.md). The ones that com
 - applying one metadata file by hand with `psql`: the seed job applies the whole tree and resets
   partial changes;
 - adding a "finalize" shortcut that bypasses the approval workflow (AWE);
-- committing anything generated: `out/`, `state/`, `src/` and `.env` are git-ignored here, and the
-  registry repositories ignore their build outputs.
+- committing anything generated: `out/`, `state/`, `oan-workspace/` and `.env` are git-ignored
+  here, and the repositories ignore their build outputs.
 
-## Several registries, several developers
+## Several components, several developers
 
-Commons is shared; registries are independent Compose projects. `./oan.sh dev crop` next to a
-running farmer registry adds the crop project and clones `src/cropsown-regsitry` (the COSS
-repository name is spelled that way). `./oan.sh src status` shows every checkout at once. Two
-people never share a `src/` folder; each clone has its own fork as `origin`.
+Commons is shared; registries are independent Compose projects; services and dashboards join
+them. `./oan.sh dev crop` next to a running farmer registry adds the crop project and clones
+`oan-workspace/cropsown-regsitry` (the COSS repository name is spelled that way). Two people never
+share an `oan-workspace/`; each has their own checkouts and their own fork.
 
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | `exec /…/entrypoint.sh: no such file or directory` in a container | CRLF checkout | the message printed by `build` gives the three git commands |
-| `reload` says `nothing rendered` | you are in ghcr mode or never started this registry | `./oan.sh dev <registry>` |
-| `rebase stopped on a conflict` | your branch and upstream changed the same file | resolve in `src/<repo>`, `git rebase --continue`, then `./oan.sh reload` |
+| `reload needs OAN_IMAGE_SOURCE=local` | you are in ghcr mode | `./oan.sh dev <component>` |
 | images rebuilt but the UI shows the old behaviour | browser cache for the staff UI, or the seed job was not re-run | hard reload the page; `./oan.sh rerun <release>-db-seed` |
-| `no fork found: origin is Centre-for-Open-Societal-Systems/… itself` | no gh session and no `OAN_GITHUB_USER` fork | fine with push rights; otherwise fork in the browser, then `./oan.sh src fork <registry> <you>` |
-| `src pr` fails on push | `origin` is COSS and you have no push rights | same: fork in the browser, `./oan.sh src fork <registry> <you>`, run `pr` again |
+| `not on GHCR (yet)` during `up` | a package is not published or not public | the stack builds from source instead; see docs/images-and-seed-data.md |

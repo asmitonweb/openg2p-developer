@@ -4,8 +4,8 @@
 # Rules here are tried first (regex -> replacement, Python re syntax). Any other ECR image
 # is then mapped generically to  $OAN_IMAGE_PREFIX/<product>/<role>:<tag>  with the digest
 # dropped, so the same compose can point at GHCR (pull) or at local builds (oan.sh build).
-rewrites:
-  # Consent Manager: the COSS chart pins a development build of the upstream service.
-  # Use the published upstream release the vendored subchart defaults to.
-  - match: '^\d+\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/openg2p/commons/consent-manager-(api|ui|sanity):.*$'
-    replace: 'openg2p/consent-manager-\1:1.0.2'
+#
+# No rule is needed today: every private image of the COSS charts has a component in
+# scripts/components.sh, and its fork mirror workflow publishes ghcr.io/asmitonweb/<product>/<role>
+# (see docs/images-and-seed-data.md). Add a rule here only for an image nobody builds.
+rewrites: []

@@ -1,0 +1,221 @@
+# Extras of the aggregation-api component (scripts/render.sh passes this file to gen.py in
+# namespace commons, after the commons-services chart renders).
+#
+# The COSS commons-services chart expects three objects "provisioned outside the chart":
+#   ConfigMap aggregation-api-catalog        registries.yaml, mounted at /app/config
+#   Secret    aggregation-api-runtime        envFrom: the AGGREGATION_LAYER_* settings the chart's env block lacks
+#   Secret    aggregation-api-signing-rsa-20261023   password + aggregation.p12 (Ed25519 key in PKCS#12), mounted at /app/keys
+# On Kubernetes they come from the cluster operator; here this file provides them.
+#
+# Secret values: gen.py pins every Secret value in state/secrets.json on the first render and the
+# pinned value wins on later renders. Values that `./oan.sh onboard aggregation-api` produces
+# (client secrets, the key) are written as empty strings here, so they are pinned as empty and
+# onboarding then overwrites the pinned entries. `password` is omitted on purpose: the chart
+# references it with secretKeyRef, so gen.py synthesizes and pins one; onboarding encrypts the
+# generated key with it.
+#
+# Catalogue: upstream deploy/registries.yaml with the registry URLs pointed at the local service
+# aliases (<service>.<namespace>.svc.cluster.local, port 80). Crop and livestock entries only work
+# when those registries are selected.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aggregation-api-catalog
+  namespace: commons
+data:
+  registries.yaml: |
+    version: 1
+    registries:
+
+      FARMER_REGISTRY:
+        name: Farmer Registry
+        partner_api:
+          base_url: http://farmer-registry-partner-api.farmer.svc.cluster.local
+          receiver_id: farmer-registry
+        staff_api:
+          base_url: http://farmer-registry-staff-portal-api.farmer.svc.cluster.local
+          registers: [Farmer]
+        binding:
+          audience: agg-layer-farmer
+          controller_id: farmer_registry
+          allowed_purposes: [loan_origination, subsidy_verification]
+        search:
+          reg_type: Farmer
+          reg_record_type: spdci-extensions-dci:FarmerRecord
+          id_type: UIN
+          match:
+            path: farmer_personal_details.member_identifier[]
+            strip_prefixes: ["FAN-"]       # a FAN is the same number with or without it
+        registers:
+          FARMER:
+            name: Farmer
+            functional_record_id: farmer_personal_details.member_identifier[].identifier_value
+            last_approved_at: farmer_personal_details.last_updated
+        scopes:
+          farmer_personal_details:
+            register: FARMER
+            fields:
+              - member_identifier[].identifier_value
+              - demographic_info.name.given_name
+              - demographic_info.name.second_name
+              - demographic_info.name.surname
+              - demographic_info.phone_number
+              - demographic_info.sex
+              - demographic_info.birth_date
+              - marital_status
+              - education_level
+              - registration_date
+          family_details:
+            table: HOUSEHOLD
+            name: Household
+            parent: FARMER
+            internal_record_id: group_identifier[].identifier_value
+            fields: ["*"]
+          farm_details:
+            table: FARM
+            name: Farm
+            parent: FARMER
+            fields: ["*"]
+
+      LIVESTOCK_REGISTRY:
+        name: Livestock Registry
+        partner_api:
+          base_url: http://livestock-registry-partner-api.live.svc.cluster.local
+          receiver_id: livestock-registry
+        staff_api:
+          base_url: http://livestock-registry-staff-portal-api.live.svc.cluster.local
+          registers: [Farmer, Livestock]   # the farmer profile, then the holdings
+        binding:
+          audience: agg-layer-livestock
+          controller_id: livestock_registry
+          allowed_purposes: [loan_origination, subsidy_verification]
+        search:
+          reg_type: Livestock
+          reg_record_type: spdci-extensions-dci:LivestockRecord
+          id_type: UIN
+          match:
+            path: livestock_details.farmer_info.member_identifier[]
+            strip_prefixes: ["FAN-"]       # a FAN is the same number with or without it
+        registers:
+          LIVESTOCK:
+            name: Livestock holding
+            functional_record_id: livestock_details.record_identifier[].identifier_value
+            record_status: livestock_details.status
+        scopes:
+          livestock_details:
+            register: LIVESTOCK
+            fields:
+              - record_identifier[].identifier_value
+              - oan_id
+              - status
+              - total_animals
+              - registration_date
+              - farmer_info.demographic_info.name.given_name
+              - farmer_info.demographic_info.name.surname
+              - farmer_info.phone_number
+              - place
+          animal_details:
+            table: ANIMAL
+            name: Animal
+            parent: LIVESTOCK
+            fields: ["*"]
+          health_event_details:
+            table: HEALTH_EVENT
+            name: Health event
+            parent: LIVESTOCK
+            fields: ["*"]
+          vaccination_details:
+            table: VACCINATION
+            name: Vaccination
+            parent: LIVESTOCK
+            fields: ["*"]
+          vital_event_details:
+            table: VITAL_EVENT
+            name: Vital event
+            parent: LIVESTOCK
+            fields: ["*"]
+          breeding_details:
+            table: BREEDING
+            name: Breeding
+            parent: LIVESTOCK
+            fields: ["*"]
+
+      CROPSOWN_REGISTRY:
+        name: Crop Sown Registry
+        partner_api:
+          base_url: http://cropsown-registry-partner-api.crop.svc.cluster.local
+          receiver_id: cropsown-registry
+        staff_api:
+          base_url: http://cropsown-registry-staff-portal-api.crop.svc.cluster.local
+          registers: [CropSown]            # no Farmer register in crop sown
+        binding:
+          audience: agg-layer-cropsown
+          controller_id: cropsown_registry
+          allowed_purposes: [loan_origination, subsidy_verification]
+        search:
+          reg_type: CropSown
+          reg_record_type: spdci-extensions-dci:CropSownRecord
+          id_type: UIN
+          match:
+            path: crop_sown_details.farmer_info.member_identifier[]
+            strip_prefixes: ["FAN-"]       # a FAN is the same number with or without it
+        registers:
+          CROP_SOWN:
+            name: Crop sown
+            functional_record_id: crop_sown_details.record_identifier[].identifier_value
+        scopes:
+          crop_sown_details:
+            register: CROP_SOWN
+            fields: ["*"]
+          farm_details:
+            table: FARM
+            name: Farm
+            parent: CROP_SOWN
+            fields: ["*"]
+          crop_production_details:
+            table: CROP_PRODUCTION
+            name: Crop production
+            parent: CROP_SOWN
+            fields: ["*"]
+          infestation_details:
+            table: INFESTATION
+            name: Infestation
+            parent: CROP_SOWN
+            fields: ["*"]
+          cluster_details:
+            table: CLUSTER
+            name: Cluster
+            parent: CROP_SOWN
+            fields: ["*"]
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aggregation-api-runtime
+  namespace: commons
+type: Opaque
+stringData:
+  AGGREGATION_LAYER_NO_OF_WORKERS: "1"
+  # Consent Manager client credentials flow (the staff realm, in-network Keycloak URL). The
+  # client `aggregation-layer` and its secret are created by the onboarding.
+  AGGREGATION_LAYER_CM_TOKEN_URL: http://commons-keycloak.commons.svc.cluster.local/realms/staff/protocol/openid-connect/token
+  AGGREGATION_LAYER_CM_CLIENT_ID: aggregation-layer
+  AGGREGATION_LAYER_CM_CLIENT_SECRET: ""
+  AGGREGATION_LAYER_AGGREGATOR_ISSUER: aggregation-layer
+  AGGREGATION_LAYER_AGGREGATOR_SENDER_ID: aggregation-layer
+  AGGREGATION_LAYER_SUBJECT_DEFAULT_ID_TYPE: national_id
+  # Staff search client. register-aggregator.py does not create `aggregation-layer-staff`; the
+  # secret stays empty until that client exists and its secret is put into state/secrets.json.
+  AGGREGATION_LAYER_STAFF_API_CLIENT_SECRET: ""
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aggregation-api-signing-rsa-20261023
+  namespace: commons
+type: Opaque
+stringData:
+  # password: not set, synthesized by gen.py (see header)
+  # Empty until `./oan.sh onboard aggregation-api` pins the real key (the service cannot sign
+  # before that).
+  aggregation.p12: ""

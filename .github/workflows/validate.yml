@@ -13,12 +13,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Render (commons + farmer, crop, live, da)
-        # Registry images as local build targets: their GHCR packages may not exist yet.
+      - name: Render every component (commons + registries, services, dashboards)
+        # OAN images as local build targets: the check below verifies the published ones separately.
         env:
           OAN_IMAGE_PREFIX: oan
           OAN_IMAGE_TAG: local
-        run: scripts/render.sh farmer crop live da
+        run: scripts/render.sh farmer crop live da aggregation-api consent-partner-portal farmer-dashboard crop-dashboard live-dashboard
+      - name: Every OAN image is published on GHCR
+        # ghcr.io/asmitonweb/<product>/<role>:latest for every role of every component that ships
+        # an image (built by the fork mirror workflows; a missing one means a fork is not set up).
+        run: |
+          source scripts/components.sh
+          fail=0
+          for id in $(comp_ids); do
+            product=$(comp_field "$id" 8); [ "$product" != - ] || continue
+            for role in $(comp_roles "$id"); do
+              img="ghcr.io/asmitonweb/$product/$role:latest"
+              docker manifest inspect "$img" >/dev/null 2>&1 && echo "ok  $img" || { echo "MISSING $img"; fail=1; }
+            done
+          done
+          exit $fail
       - name: Compose files validate
         env:
           COMPOSE_PROFILES: '*'

@@ -21,7 +21,9 @@ export MSYS_NO_PATHCONV=1
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 # shellcheck disable=SC1091
-source scripts/registries.sh
+source scripts/components.sh
+# shellcheck disable=SC1091
+source scripts/ui.sh
 export COMPOSE_PROFILES='*'
 NETWORK=openg2p
 TSV=out/services.tsv  # namespace, profile, service, kind
@@ -66,7 +68,7 @@ expand() {
            awk -F'\t' -v t="$t" '$2==t {print $1"\t"$2}' "$TSV"
          else
            p=$(awk -F'\t' -v s="$t" '$3==s && $2!="-" {print $1"\t"$2; exit}' "$TSV")
-           [ -n "$p" ] || { echo "unknown registry, profile or service: $t (registries: $(reg_ids))" >&2; exit 1; }
+           [ -n "$p" ] || { echo "unknown registry, profile or service: $t (registries: $(comp_by_kind registry))" >&2; exit 1; }
            printf '%s\n' "$p"
          fi ;;
     esac
@@ -94,16 +96,18 @@ pending() {  # drop jobs that already completed successfully
   for j in "$@"; do [ "$(state "$j")" = "exited 0" ] || echo "$j"; done
 }
 wait_jobs() {  # poll until each job exited 0, or stayed failed after its retries
-  local j s deadline=$((SECONDS + ${JOB_TIMEOUT:-900})) failed=0
+  local j s t0 deadline=$((SECONDS + ${JOB_TIMEOUT:-900})) failed=0 first
   for j in "$@"; do
+    t0=$SECONDS; first=first
     while :; do
       s=$(state "$j")
       case "$s" in
-        "exited 0") echo "  ok    $j"; break ;;
+        "exited 0") progress_end; ok "$j $C_DIM($(elapsed $t0))$C_OFF"; break ;;
         exited*)
           sleep 3
-          if [ "$(state "$j")" = "$s" ]; then echo "  FAIL  $j (${s#exited }): docker logs $j"; failed=1; break; fi ;;
-        *) [ $SECONDS -lt $deadline ] || { echo "  TIMEOUT $j"; failed=1; break; }
+          if [ "$(state "$j")" = "$s" ]; then progress_end; fail "$j exited ${s#exited } after $(elapsed $t0): docker logs $j"; failed=1; break; fi ;;
+        *) [ $SECONDS -lt $deadline ] || { progress_end; fail "$j: no result after $(elapsed $t0) (JOB_TIMEOUT)"; failed=1; break; }
+           progress "$j" "$(elapsed $t0)" $first; first=''
            sleep 2 ;;
       esac
     done
@@ -114,8 +118,8 @@ run_jobs() {  # $1 = label; rest = jobs
   local label="$1"; shift
   local todo
   mapfile -t todo < <(pending "$@")
-  [ ${#todo[@]} -gt 0 ] || return 0
-  echo "$label: ${#todo[@]} job(s)"
+  [ ${#todo[@]} -gt 0 ] || { note "$label: already done"; return 0; }
+  note "$label: ${#todo[@]} job(s)"
   by_ns up -d -- "${todo[@]}"
   wait_jobs "${todo[@]}"
 }
@@ -134,12 +138,13 @@ up() {
   # Databases first: Keycloak needs the database the postgres-init job creates, and MinIO's init
   # container waits for Keycloak, so `up -d` on all of them at once would never return.
   local dbs="postgresql redis redis-auth"
-  echo "infrastructure: $(cut -f2 <<<"$infra" | tr '\n' ' ')+ gateway"
+  step "Infrastructure: $(cut -f2 <<<"$infra" | tr '\n' ' ')+ gateway"
   mapfile -t svc < <(services "$LONG" "$(awk -F'\t' -v i=" $dbs " 'index(i, " "$2" ")' <<<"$infra")")
   by_ns up -d -- gateway "${svc[@]}"
   # its conf is a bind-mounted file: a re-render changes it without recreating the container
   docker exec gateway nginx -s reload >/dev/null 2>&1 || true
 
+  step "Databases and realms"
   mapfile -t svc < <(ns_jobs postgres-init "${ns_list[@]}")
   run_jobs "postgres-init" "${svc[@]}"
   mapfile -t svc < <(services "$LONG" "$(awk -F'\t' -v i=" $dbs " '!index(i, " "$2" ")' <<<"$infra")")
@@ -153,9 +158,9 @@ up() {
   local long jobs
   mapfile -t long < <(services "$LONG" "$apps")
   mapfile -t jobs < <(pending $(services job "$apps" | grep -vE '^(commons-keycloak-init-|.*-(pg|postgres)-init|.*-kc-init)' || true))
-  echo "apps: $(cut -f2 <<<"$apps" | sort -u | tr '\n' ' ')"
+  step "Applications: $(cut -f2 <<<"$apps" | sort -u | tr '\n' ' ')"
   by_ns up -d -- "${long[@]}" "${jobs[@]}"
-  [ ${#jobs[@]} -eq 0 ] || { echo "app jobs:"; wait_jobs "${jobs[@]}" || true; }
+  [ ${#jobs[@]} -eq 0 ] || { note "seed and registration jobs"; wait_jobs "${jobs[@]}" || true; }
 }
 
 stop() {
@@ -182,7 +187,7 @@ ram() {
 
 cmd="${1:-help}"; shift || true
 case "$cmd" in
-  up) [ $# -gt 0 ] || { echo "usage: stack.sh up <$(reg_ids | sed 's/ $//; s/ /|/g')|commons|profile|service>..." >&2; exit 1; }; up "$@" ;;
+  up) [ $# -gt 0 ] || { echo "usage: stack.sh up <$(comp_by_kind registry | sed 's/ $//; s/ /|/g')|commons|profile|service>..." >&2; exit 1; }; up "$@" ;;
   stop) [ $# -gt 0 ] || set -- all; stop "$@" ;;
   rerun) by_ns up -d --force-recreate --no-deps -- "$@"; wait_jobs "$@" ;;
   create) prepare; for ns in $(namespaces); do dc "$ns" create; done ;;

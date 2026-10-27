@@ -4,8 +4,8 @@
 /.cache/
 # pinned generated secrets (Keycloak admin password, DB passwords): never commit
 /state/
-# local source checkouts used by `oan.sh build`
-/src/
+# source checkouts of the components (COSS develop), kept by `oan.sh up`
+/oan-workspace/
 __pycache__/
 *.pyc
 .env

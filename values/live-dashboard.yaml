@@ -1,0 +1,54 @@
+# Local values for the COSS livestock-registry-dashboard addon chart (oan-helm addons/registry-dashboards).
+# Rendered into the live project next to the registry; needs the registry's dashboard-api
+# (dashboardApi.enabled, switched on by the live-dashboard-api component).
+#
+# The chart reads the IAM cookie domain from the IAM Deployment with a Helm `lookup`, which
+# `helm template` cannot do, so every host-related value is given explicitly here.
+
+image:
+  # ECR-style path on purpose: scripts/gen.py remaps it like every other private image to
+  # <OAN_IMAGE_PREFIX>/farmer-registry/dashboard:<OAN_IMAGE_TAG> (GHCR pull or local build).
+  repository: 379220350808.dkr.ecr.ap-south-1.amazonaws.com/openg2p/livestock-registry/dashboard
+  tag: latest
+
+registry: live
+environment: ""
+domain: openg2p.localtest.me
+host: livestock-registry-dashboard.openg2p.localtest.me
+
+# No ECR locally.
+ecrPullSecret:
+  enabled: false
+
+dashboardApi:
+  service: livestock-registry-dashboard-api
+  auth:
+    enabled: true
+    clientId: livestock-registry-dashboard-api
+    role: charts:read
+    tokenUrl: http://keycloak.openg2p.localtest.me/realms/staff/protocol/openid-connect/token
+
+iam:
+  # The local commons has no separate public (-pub) IAM; the dashboard talks to the same one.
+  service: commons-services-iam-staff-portal-api
+  cookieDomain: .openg2p.localtest.me
+
+links:
+  staffPortalUrl: http://staff-portal.openg2p.localtest.me
+  registryPortalUrl: http://livestock-registry.openg2p.localtest.me
+
+iamSetup:
+  enabled: true
+  keycloakAdmin:
+    user: admin
+    secret:
+      name: commons-keycloak
+      key: admin-password
+
+ingress:
+  public:
+    enabled: true
+    host: livestock-registry-dashboard.openg2p.localtest.me
+
+smoke:
+  enabled: true

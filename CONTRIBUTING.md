@@ -47,17 +47,17 @@ upstream issue or a metadata-driven replacement; do not add new ones.
 
 The step-by-step version with commands is [docs/developing-a-registry.md](docs/developing-a-registry.md).
 
-1. `./oan.sh dev <registry>`: forks and clones the COSS repository into `src/<repo>` (your fork is
-   `origin`, COSS is `upstream`), builds the images from it and starts the stack.
-2. `./oan.sh src branch <registry> <name>` from the newest upstream `develop`; never commit on `develop`.
-3. Edit the registry's source in `src/<repo>` (or point `OAN_<REGISTRY>_SRC` at your checkout).
-4. `./oan.sh reload <registry> <role...>` rebuilds the images you touched and restarts their
+1. `./oan.sh dev <component>`: the COSS repository is cloned into `oan-workspace/<repo>` (branch
+   `develop`), the images are built from it and the stack starts.
+2. Fork the repository on GitHub, make the fork `origin` and COSS `upstream`, and branch from the
+   newest `develop`; never commit on `develop`. Plain git, in `oan-workspace/<repo>`.
+3. Edit the source there (or point `OAN_<ID>_SRC` at a checkout of your own).
+4. `./oan.sh reload <component> <role...>` rebuilds the images you touched and restarts their
    services; for metadata/seed changes also `./oan.sh rerun <release>-db-seed`.
    Metadata is applied as a **whole tree** by the seed job; never apply one file by hand.
-5. Add or update tests in the registry repo (schema/metadata validation, sanity tests) and run
-   them the way the repository's CI does.
-6. Commit, `./oan.sh src sync <registry>` to rebase onto upstream `develop`, then
-   `./oan.sh src pr <registry>`: it pushes to your fork and opens the pull request against the
+5. Add or update tests in the repository (schema/metadata validation, sanity tests) and run them
+   the way the repository's CI does.
+6. Commit, rebase onto `upstream/develop`, push to your fork and open the pull request against the
    COSS repository's `develop`. Describe the behaviour, not the ticket number. The delivery
    pipeline promotes `develop → testing → staging → release`.
 7. If the change needs a chart change (new env var, new job), make the oan-helm change in the
@@ -70,6 +70,11 @@ Every register change in every registry goes through the approval workflow (AWE)
 
 Keep the stack a faithful rendering of the charts. Prefer, in this order:
 
+0. **`scripts/components.sh`**: a new selectable thing (a registry, a commons service switched on
+   by a chart value, an add-on chart). One line: chart, release, namespace, COSS repository,
+   image product and roles with their Dockerfiles, the Helm values that enable it, what it
+   requires. Then `values/<id>.yaml` for an add-on, `<ID>_VERSION` in `versions.env`, and
+   `ci/install-fork-workflow.sh <id>` to publish its images from a fork.
 1. **`versions.env`**: a new chart version. Run `./oan.sh render`, start a registry, check
    `out/REPORT.md` for new warnings or skipped objects, commit the pin.
 2. **`values/<layer>.yaml`**: a value the chart exposes (hostname, toggle, env var). This is also
@@ -82,7 +87,7 @@ Keep the stack a faithful rendering of the charts. Prefer, in this order:
    (for every chart), document the rule in the docstring, and add the object to the report if it
    is skipped rather than silently dropping it.
 
-Never commit `out/`, `rendered/`, `.cache/`, `state/` or `src/` (git-ignored). `state/secrets.json`
+Never commit `out/`, `rendered/`, `.cache/`, `state/` or `oan-workspace/` (git-ignored). `state/secrets.json`
 holds generated passwords for your volumes; `out/files` holds rendered secrets.
 
 Scripts must stay POSIX-bash compatible with Git for Windows bash and LF line endings

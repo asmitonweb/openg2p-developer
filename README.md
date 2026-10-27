@@ -1,15 +1,18 @@
 # OAN developer stack
 
-One-command local environment for OpenAgriNet (OAN) registry development, for OAN and COSS
-developers. It runs the same three layers as the shared dev cluster, from the same Helm charts,
-on Docker Compose:
+One-command local environment for OpenAgriNet (OAN) development, for OAN and COSS developers.
+It runs the same layers as the shared dev cluster, from the same Helm charts, on Docker Compose,
+and puts the source of everything you run into `oan-workspace/`:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ 3. <registry>        farmer | crop | live | da   (pick one, or more)  │  COSS chart  oan-helm
+│ 4. add-ons           farmer | crop | live dashboards                  │  COSS charts oan-helm
+├──────────────────────────────────────────────────────────────────────┤
+│ 3. registries        farmer | crop | live | da   (pick any)           │  COSS charts oan-helm
 ├──────────────────────────────────────────────────────────────────────┤
 │ 2. Commons Services  IAM · Master Data · AWE · Partner Mgmt ·        │  COSS chart  oan-helm
-│                      Consent Manager · eSignet · ODK · staff portal  │  (vendors upstream + OAN config)
+│                      Consent Manager · aggregation API · partner     │  (vendors upstream + OAN config)
+│                      portal · eSignet · ODK · staff portal           │
 ├──────────────────────────────────────────────────────────────────────┤
 │ 1. Commons Base      Postgres · Keycloak · MinIO · Redis · Kafka     │  upstream OpenG2P, unmodified
 └──────────────────────────────────────────────────────────────────────┘
@@ -30,20 +33,48 @@ bump is a change to `versions.env` and a re-render, never a hand-ported compose 
 ```bash
 git clone -b oan-developer https://github.com/asmitonweb/openg2p-developer.git oan-developer
 cd oan-developer
-./oan.sh up farmer        # or: crop | live        (Windows: oan.cmd up farmer)
+./oan.sh dev farmer            # Windows: oan.cmd dev farmer
 ```
 
-The first run builds the tools image, renders the charts, pulls the registry's images from GHCR
-(`:latest`; while a registry is not published there yet it is built from its COSS source
-repository, cloned into `src/`, about 15 minutes), pulls the commons images, then starts
-everything in Helm release order: infrastructure, database init jobs, Keycloak init, the
-services, and finally the registry's seed job. A second `up` takes seconds.
+`dev farmer` does everything a developer needs for the farmer registry:
+
+1. renders the charts into Compose projects;
+2. clones the COSS `farmer-registry` repository (`develop`) into `oan-workspace/farmer-registry`;
+3. builds the registry's images from that checkout (about 15 minutes the first time) and pulls
+   the commons images;
+4. starts everything in Helm release order: infrastructure, database init jobs, Keycloak init,
+   the services, and finally the registry's seed job.
+
+A second run takes seconds. `./oan.sh up` does the same with the **published** images
+(`ghcr.io/asmitonweb/...:latest`, rebuilt hourly from COSS `develop`) and still clones the
+source, so the code is always next to the running system.
+
+Pick what runs with the checklist, in the terminal:
+
+```bash
+./oan.sh select                # space toggles, enter saves to .env; dependencies follow automatically
+```
+
+```
+Select components  space toggle  ↑↓/jk move  enter save  q cancel
+ ▶ [x] farmer                   registry  Farmer registry
+   [ ] crop                     registry  Crop sown registry
+   [ ] live                     registry  Livestock registry
+   [ ] da                       registry  DA registry (empty stub upstream: renders nothing yet)
+   [x] consent-manager          service   Consent Manager (OAN build; always part of commons)
+   [ ] aggregation-api          service   Aggregation layer over the OAN services
+   [ ] consent-partner-portal   service   Consent partner portal
+   [x] farmer-dashboard-api     feature   Farmer dashboard API (reads the registry database)
+   [x] farmer-dashboard         addon     Farmer dashboard (Next.js)
+   ...
+```
 
 Then open:
 
 | What | URL |
 | --- | --- |
 | Registry staff UI | http://farmer-registry.openg2p.localtest.me (crop-registry…, livestock-registry…) |
+| Registry dashboard | http://farmer-registry-dashboard.openg2p.localtest.me |
 | Staff portal (app launcher) | http://staff-portal.openg2p.localtest.me |
 | Keycloak | http://keycloak.openg2p.localtest.me |
 | Master Data UI · AWE | http://master-data-ui.openg2p.localtest.me · http://awe.openg2p.localtest.me |
@@ -54,70 +85,77 @@ is listed in `out/REPORT.md` after a render. Seeded staff users and their passwo
 `out/files/*keycloak-init*/config/clients.yaml`; generated admin passwords (Keycloak, Postgres)
 are pinned in `state/secrets.json`, which is git-ignored.
 
+## The developer loop
+
+```bash
+./oan.sh dev farmer                    # farmer from oan-workspace/farmer-registry (sets OAN_IMAGE_SOURCE=local)
+#   ... edit oan-workspace/farmer-registry on your own branch ...
+./oan.sh reload farmer staff-api       # rebuild the roles you touched, restart the services running them
+./oan.sh reload farmer db-seed && ./oan.sh rerun farmer-registry-db-seed    # metadata / seed changes
+./oan.sh src status                    # every checkout: branch, distance from develop, uncommitted files
+```
+
+Forking, branching, rebasing and opening the pull request on COSS `develop` are ordinary git and
+GitHub, done by you; [docs/developing-a-registry.md](docs/developing-a-registry.md) walks through
+the expected flow, the tests each repository's CI runs, the commit conventions and what must
+never be changed (the platform). The same loop works for every component:
+`./oan.sh dev consent-manager`, `./oan.sh dev farmer-dashboard`, …
+
 ## Everyday commands
 
 ```bash
-./oan.sh up crop                       # add or switch to another registry (commons is shared)
-./oan.sh stop farmer                   # stop one registry's containers; data volumes stay
-./oan.sh stop all                      # stop everything
-./oan.sh build farmer staff-api        # rebuild one image after editing src/farmer-registry
+./oan.sh up                            # start the selection (./oan.sh select); up crop adds a registry
+./oan.sh stop farmer | stop all        # stop one registry's containers, or everything; volumes stay
 ./oan.sh rerun farmer-registry-db-seed # run a finished job again (fresh seed)
+./oan.sh pull                          # fetch newer published images (latest moved on GHCR)
 ./oan.sh ps | ram | logs <container>   # status, memory per project, follow logs
 ./oan.sh render                        # re-render after changing versions.env or values/
 ./oan.sh versions                      # move versions.env to the newest published charts
+./oan.sh components                    # the catalogue and the current selection
 ./oan.sh down                          # remove containers (volumes kept)
 ```
 
-Profiles beyond the default bundle (eSignet, ODK Central, Superset, Kafka, …) start on request:
-`./oan.sh up esignet farmer`. Names are in `out/REPORT.md`.
-
-## Changing a registry
-
-`up` runs the published images. To change a registry, run it from your own source instead:
-
-```bash
-./oan.sh dev farmer                      # fork + clone COSS farmer-registry into src/, build, start
-./oan.sh src branch farmer my-change     # branch from the newest upstream develop
-#  ... edit src/farmer-registry ...
-./oan.sh reload farmer staff-api         # rebuild the roles you touched, restart their services
-./oan.sh src sync farmer                 # rebase onto upstream develop
-./oan.sh src pr farmer                   # push to your fork, open the pull request on COSS develop
-```
-
-`dev` sets `OAN_IMAGE_SOURCE=local` in `.env`, so every later command builds from `src/`. The
-checkout has the COSS repository as `upstream` and your fork as `origin` when one is found
-(`gh` logged in, or `OAN_GITHUB_USER` in `.env`); without a fork, `origin` is COSS itself and
-`./oan.sh src fork <registry> <you>` switches later. A fork is recommended, not required. The full loop, test commands, branch and commit conventions and what
-must never be changed are in [docs/developing-a-registry.md](docs/developing-a-registry.md).
+Profiles beyond the selection (eSignet, ODK Central, Superset, Kafka, …) start on request through
+`scripts/stack.sh up esignet`; names are in `out/REPORT.md`.
 
 ## Where things come from
 
 | Layer | Chart | Version source | Images |
 | --- | --- | --- | --- |
 | Commons Base | `openg2p-commons-base` from openg2p.github.io/openg2p-helm | newest release candidate in [OpenG2P/versions](https://github.com/OpenG2P/versions) | upstream Docker Hub |
-| Commons Services | `openg2p-commons-services` from the COSS [oan-helm](https://github.com/Centre-for-Open-Societal-Systems/oan-helm) repository | oan-helm `repository/index.yaml` | upstream Docker Hub, plus the ETH-OAN Master Data seed on GHCR |
-| Registry | `openg2p-<registry>-registry` from oan-helm | oan-helm index | `ghcr.io/asmitonweb/<product>/<role>:latest`, built from COSS `develop` by the fork mirror workflow (OAN tracks a floating tag); built from source when not published yet, or always with `OAN_IMAGE_SOURCE=local` |
+| Commons Services | `openg2p-commons-services` from the COSS [oan-helm](https://github.com/Centre-for-Open-Societal-Systems/oan-helm) repository | oan-helm `repository/index.yaml` | upstream Docker Hub; the OAN services (Consent Manager, aggregation API, partner portal) and the ETH-OAN Master Data seed from GHCR |
+| Registries | `openg2p-<registry>-registry` from oan-helm | oan-helm index | `ghcr.io/asmitonweb/<product>/<role>:latest` |
+| Dashboards | `<registry>-registry-dashboard` from oan-helm | oan-helm index | `ghcr.io/asmitonweb/<registry>-registry/dashboard:latest` |
+
+Every OAN image is built from COSS `develop` by a mirror workflow on the `asmitonweb` forks (OAN
+tracks a floating `latest` tag); what is not published yet is built from `oan-workspace/`, and
+`OAN_IMAGE_SOURCE=local` always builds. The catalogue of components, their repositories, images
+and chart switches is [`scripts/components.sh`](scripts/components.sh).
 
 Details: [docs/architecture.md](docs/architecture.md), [docs/registries.md](docs/registries.md),
-[docs/images-and-seed-data.md](docs/images-and-seed-data.md),
+[docs/services.md](docs/services.md), [docs/images-and-seed-data.md](docs/images-and-seed-data.md),
 [docs/developing-a-registry.md](docs/developing-a-registry.md). How to contribute without touching
 the platform: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Layout
 
 ```
-oan.sh / oan.cmd        entry point
+oan.sh / oan.cmd        entry point (select, up, dev, reload, src, ...)
 versions.env            chart pins (the only thing a version bump touches)
-values/<layer>.yaml     Helm values for the local environment, per release
+scripts/components.sh   the catalogue: registries, services, features, add-ons
+values/<id>.yaml        Helm values for the local environment, per release
 overrides/<ns>.yaml     hand-kept Compose tweaks (worker counts, local Kafka), per project
+extras/<id>.yaml        objects a chart expects from outside (e.g. the aggregation API's catalogue)
 images.yaml             explicit image rewrites applied during translation
 scripts/render.sh       fetch charts -> helm template -> gen.py
 scripts/gen.py          Kubernetes manifests -> Compose (mapping rules in its docstring)
 scripts/stack.sh        start/stop in Helm release order
-scripts/build.sh        build a registry's images from its source repo, as its CI does
-scripts/src.sh          fork / clone / branch / sync / pull request for src/<repo>
+scripts/build.sh        build a component's images from oan-workspace/, as its CI does
+scripts/src.sh          the checkouts in oan-workspace/ (clone, status, dir)
 scripts/latest.sh       refresh versions.env from the published indexes
-out/, rendered/, .cache/, state/, src/   generated or local; git-ignored
+ci/                     the fork mirror-and-publish workflow and its installer
+oan-workspace/          source of the selected components (COSS develop); yours, git-ignored
+out/, rendered/, .cache/, state/   generated or local; git-ignored
 ```
 
 This branch (`oan-developer`) is the default branch of the `asmitonweb/openg2p-developer` fork.

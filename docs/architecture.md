@@ -9,6 +9,13 @@ The shared OAN dev cluster installs three Helm releases in order, each into a na
 | 1 | `commons` | `commons` | `openg2p-commons-base` (upstream) | OpenG2P |
 | 2 | `commons-services` | `commons` | `openg2p-commons-services` (COSS, vendors upstream) | COSS / OAN |
 | 3 | `<registry>-registry` | `farmer`, `crop`, `live`, `da` | `openg2p-<registry>-registry` (COSS wrapper of upstream `openg2p-registry`) | COSS / OAN |
+| 4 | `<registry>-registry-dashboard` | the registry's namespace | `<registry>-registry-dashboard` (oan-helm add-on) | COSS / OAN |
+
+The OAN services inside release 2 (Consent Manager, aggregation API, consent partner portal) and
+the dashboard API inside release 3 are chart switches. This repository models all of it as
+*components* (`scripts/components.sh`): registries, services (a `--set` on commons-services),
+features (a `--set` on a registry chart) and add-ons (their own chart). `./oan.sh select` picks
+them; the render applies the switches and charts of the selection.
 
 This repository reproduces exactly that. `scripts/render.sh` downloads the three charts at the
 versions in `versions.env`, runs `helm template` with `values/<release>.yaml`, and
