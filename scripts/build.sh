@@ -43,8 +43,10 @@ if [ ! -d "$src" ]; then
   git -c core.autocrlf=false clone -q --branch "${OAN_SRC_REF:-develop}" "$ORG/$repo.git" "$src"
   git -C "$src" config core.autocrlf false
 fi
-if crlf=$(grep -rlU $'\r' --include='*.sh' --include='*.py' --exclude-dir=.git --exclude-dir=node_modules "$src" 2>/dev/null | head -3) && [ -n "$crlf" ]; then
-  echo "refusing to build: CRLF line endings in $src (e.g. $(head -1 <<<"$crlf")); Linux containers cannot run them." >&2
+# Scripts the Dockerfiles copy into Linux images must be LF. A checkout made with Git's Windows
+# default (core.autocrlf=true) is CRLF and every entrypoint dies with "no such file or directory".
+if crlf=$(git -C "$src" ls-files --eol 2>/dev/null | awk '$1=="i/lf" && $2=="w/crlf" {print $4}' | head -3) && [ -n "$crlf" ]; then
+  echo "refusing to build: $src has CRLF working files that are LF in git (e.g. $(head -1 <<<"$crlf"))" >&2
   echo "fix: git -C \"$src\" config core.autocrlf false && git -C \"$src\" rm -rq --cached . && git -C \"$src\" reset -q --hard" >&2
   exit 1
 fi
