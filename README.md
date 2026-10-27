@@ -71,6 +71,24 @@ are pinned in `state/secrets.json`, which is git-ignored.
 Profiles beyond the default bundle (eSignet, ODK Central, Superset, Kafka, …) start on request:
 `./oan.sh up esignet farmer`. Names are in `out/REPORT.md`.
 
+## Changing a registry
+
+`up` runs the published images. To change a registry, run it from your own source instead:
+
+```bash
+./oan.sh dev farmer                      # fork + clone COSS farmer-registry into src/, build, start
+./oan.sh src branch farmer my-change     # branch from the newest upstream develop
+#  ... edit src/farmer-registry ...
+./oan.sh reload farmer staff-api         # rebuild the roles you touched, restart their services
+./oan.sh src sync farmer                 # rebase onto upstream develop
+./oan.sh src pr farmer                   # push to your fork, open the pull request on COSS develop
+```
+
+`dev` sets `OAN_IMAGE_SOURCE=local` in `.env`, so every later command builds from `src/`. The
+checkout has your fork as `origin` and the COSS repository as `upstream`; `gh` (GitHub CLI) creates
+the fork when you have none. The full loop, test commands, branch and commit conventions and what
+must never be changed are in [docs/developing-a-registry.md](docs/developing-a-registry.md).
+
 ## Where things come from
 
 | Layer | Chart | Version source | Images |
@@ -80,7 +98,8 @@ Profiles beyond the default bundle (eSignet, ODK Central, Superset, Kafka, …) 
 | Registry | `openg2p-<registry>-registry` from oan-helm | oan-helm index | `ghcr.io/asmitonweb/<product>/<role>:latest`, built from COSS `develop` by the fork mirror workflow (OAN tracks a floating tag); built from source when not published yet, or always with `OAN_IMAGE_SOURCE=local` |
 
 Details: [docs/architecture.md](docs/architecture.md), [docs/registries.md](docs/registries.md),
-[docs/images-and-seed-data.md](docs/images-and-seed-data.md). How to contribute without touching
+[docs/images-and-seed-data.md](docs/images-and-seed-data.md),
+[docs/developing-a-registry.md](docs/developing-a-registry.md). How to contribute without touching
 the platform: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Layout
@@ -95,6 +114,7 @@ scripts/render.sh       fetch charts -> helm template -> gen.py
 scripts/gen.py          Kubernetes manifests -> Compose (mapping rules in its docstring)
 scripts/stack.sh        start/stop in Helm release order
 scripts/build.sh        build a registry's images from its source repo, as its CI does
+scripts/src.sh          fork / clone / branch / sync / pull request for src/<repo>
 scripts/latest.sh       refresh versions.env from the published indexes
 out/, rendered/, .cache/, state/, src/   generated or local; git-ignored
 ```

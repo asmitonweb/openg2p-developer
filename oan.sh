@@ -3,6 +3,9 @@
 # rendered from the same Helm charts that run on the shared dev cluster.
 #
 #   ./oan.sh up <farmer|crop|live|da>     one command: tools image, render, images, start
+#   ./oan.sh dev <registry>               the same, built from your source checkout (fork) in src/
+#   ./oan.sh src <clone|branch|sync|status|pr> <registry> ...   fork, branch, sync, pull request
+#   ./oan.sh reload <registry> [role...]  rebuild roles from src/ and restart what runs them
 #   ./oan.sh pull <registry>              fetch the newest published images (latest moved on GHCR)
 #   ./oan.sh build <registry> [role...]   (re)build the registry's images from source (src/<repo>)
 #   ./oan.sh render [registry...]         re-render the compose projects from the pinned charts
@@ -16,7 +19,8 @@
 # Image source (where the registry images come from), via OAN_IMAGE_SOURCE in .env or the shell:
 #   ghcr   (default) pull ghcr.io/asmitonweb/<product>/<role>:latest (built from COSS develop);
 #          an image that cannot be pulled yet is built from source and tagged with that name
-#   local  always build from the COSS source repositories with scripts/build.sh (oan/…:local)
+#   local  always build from the source checkouts in src/ with scripts/build.sh (oan/…:local);
+#          `./oan.sh dev` switches to it. See docs/developing-a-registry.md.
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -80,6 +84,39 @@ ensure_images() {
   done
 }
 
+set_env() {  # set_env KEY VALUE: persist a setting in .env (created if needed)
+  touch .env
+  if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else echo "$1=$2" >> .env; fi
+}
+reload() {  # reload <id> [role...]: rebuild from src/ and restart the services that run those images
+  local id="$1"; shift
+  [ -f "out/$id/compose.yaml" ] || { echo "nothing rendered for $id: ./oan.sh dev $id first" >&2; exit 1; }
+  [ "$OAN_IMAGE_SOURCE" = local ] || { echo "reload needs OAN_IMAGE_SOURCE=local (./oan.sh dev $id sets it)" >&2; exit 1; }
+  scripts/build.sh "$id" "$@"
+  local product; product=$(reg_field "$id" 5)
+  local roles="$*"; [ -n "$roles" ] || roles=$(images_of "$id" | awk -F/ '{sub(/:.*/, "", $NF); print $NF}')
+  local role img s svcs long=() jobs=()
+  for role in $roles; do
+    img="$OAN_IMAGE_PREFIX/$product/$role:$OAN_IMAGE_TAG"
+    # services of this project that run the rebuilt image, split into long-running ones and jobs.
+    # `compose config` prints the merged file; an "image:" line belongs to the service named last.
+    svcs=$(docker compose -f "out/$id/compose.yaml" config 2>/dev/null \
+      | awk -v img="$img" '/^  [A-Za-z0-9_.-]+:$/ {svc=$1; sub(/:$/, "", svc)} $1=="image:" && $2==img {print svc}')
+    for s in $svcs; do
+      if awk -F'\t' -v ns="$id" -v s="$s" '$1==ns && $3==s && $4=="job"' out/services.tsv | grep -q .; then jobs+=("$s"); else long+=("$s"); fi
+    done
+  done
+  if [ ${#long[@]} -gt 0 ]; then
+    echo "restarting: ${long[*]}"
+    scripts/stack.sh up "$id" >/dev/null   # make sure the project is running, then recreate
+    docker compose -f "out/$id/compose.yaml" $([ -f "overrides/$id.yaml" ] && echo "-f overrides/$id.yaml") up -d --force-recreate --no-deps "${long[@]}"
+  fi
+  if [ ${#jobs[@]} -gt 0 ]; then
+    echo "jobs using a rebuilt image (run again with ./oan.sh rerun <job>): ${jobs[*]}"
+    for s in "${jobs[@]}"; do case "$s" in *-db-seed) echo "metadata/seed change: ./oan.sh rerun $s";; esac; done
+  fi
+}
+
 urls() {
   local id="${1:-}"
   echo "Commons:"
@@ -103,6 +140,14 @@ case "$cmd" in
     ensure_images "$id"
     scripts/stack.sh up "$id"
     echo; urls "$id" ;;
+  dev)
+    id="${1:-}"; [ -n "$id" ] || { echo "usage: ./oan.sh dev <$(reg_ids | sed 's/ $//; s/ /|/g')>" >&2; exit 1; }
+    reg_field "$id" 1 >/dev/null
+    [ "$OAN_IMAGE_SOURCE" = local ] || { set_env OAN_IMAGE_SOURCE local; echo "OAN_IMAGE_SOURCE=local written to .env: images now come from your source checkouts"; }
+    scripts/src.sh clone "$id"
+    OAN_IMAGE_SOURCE=local exec "$0" up "$id" ;;
+  src) scripts/src.sh "$@" ;;
+  reload) id="${1:-}"; [ -n "$id" ] || { echo "usage: ./oan.sh reload <registry> [role...]" >&2; exit 1; }; reg_field "$id" 1 >/dev/null; reload "$@" ;;
   build) scripts/build.sh "$@" ;;
   pull)
     id="${1:-}"; [ -n "$id" ] || { echo "usage: ./oan.sh pull <registry>" >&2; exit 1; }
@@ -114,5 +159,5 @@ case "$cmd" in
   logs) docker logs -f --tail 200 "$@" ;;
   versions) scripts/latest.sh ;;
   urls) urls ;;
-  *) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac

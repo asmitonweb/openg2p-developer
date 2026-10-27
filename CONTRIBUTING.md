@@ -45,15 +45,22 @@ upstream issue or a metadata-driven replacement; do not add new ones.
 
 ### Workflow for a registry change
 
-1. `./oan.sh up <registry>` and reproduce or design against the running stack.
-2. Edit the registry's source in `src/<repo>` (or point `OAN_<REGISTRY>_SRC` at your checkout).
-3. `./oan.sh build <registry> <role>` for the images you touched, then
-   `./oan.sh rerun <release>-db-seed` for metadata/seed changes or restart the service for code.
+The step-by-step version with commands is [docs/developing-a-registry.md](docs/developing-a-registry.md).
+
+1. `./oan.sh dev <registry>`: forks and clones the COSS repository into `src/<repo>` (your fork is
+   `origin`, COSS is `upstream`), builds the images from it and starts the stack.
+2. `./oan.sh src branch <registry> <name>` from the newest upstream `develop`; never commit on `develop`.
+3. Edit the registry's source in `src/<repo>` (or point `OAN_<REGISTRY>_SRC` at your checkout).
+4. `./oan.sh reload <registry> <role...>` rebuilds the images you touched and restarts their
+   services; for metadata/seed changes also `./oan.sh rerun <release>-db-seed`.
    Metadata is applied as a **whole tree** by the seed job; never apply one file by hand.
-4. Add or update tests in the registry repo (schema/metadata validation, sanity tests).
-5. Open a pull request against the COSS repository's `develop`. Describe the behaviour, not the
-   ticket number. The delivery pipeline promotes `develop → testing → staging → release`.
-6. If the change needs a chart change (new env var, new job), make the oan-helm change in the
+5. Add or update tests in the registry repo (schema/metadata validation, sanity tests) and run
+   them the way the repository's CI does.
+6. Commit, `./oan.sh src sync <registry>` to rebase onto upstream `develop`, then
+   `./oan.sh src pr <registry>`: it pushes to your fork and opens the pull request against the
+   COSS repository's `develop`. Describe the behaviour, not the ticket number. The delivery
+   pipeline promotes `develop → testing → staging → release`.
+7. If the change needs a chart change (new env var, new job), make the oan-helm change in the
    same review cycle and bump the chart pin here (`versions.env`) once it is released.
 
 Every register change in every registry goes through the approval workflow (AWE). Do not add
