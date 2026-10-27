@@ -1,0 +1,41 @@
+# Render every registry from the pinned charts and check the result:
+# compose files validate, no private host or image leaks into them, and every referenced image
+# is either a local build target (oan/*:local) or publicly pullable.
+name: Validate rendered stack
+
+on:
+  pull_request:
+  push:
+    branches: [oan-developer]
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render (commons + farmer, crop, live, da)
+        run: scripts/render.sh farmer crop live da
+      - name: Compose files validate
+        env:
+          COMPOSE_PROFILES: '*'
+        run: |
+          for ns in commons farmer crop live; do
+            files=(-f out/$ns/compose.yaml); [ -f overrides/$ns.yaml ] && files+=(-f overrides/$ns.yaml)
+            docker compose "${files[@]}" config -q && echo "$ns ok"
+          done
+      - name: No private hosts or registries in the compose projects
+        run: |
+          ! grep -rE 'oanstaging\.com|dkr\.ecr\.|istio-system' out/*/compose.yaml out/files
+      - name: Every image is a local build target or publicly pullable
+        env:
+          COMPOSE_PROFILES: '*'
+        run: |
+          fail=0
+          for ns in commons farmer crop live; do docker compose -f out/$ns/compose.yaml config --images; done | sort -u | while read -r img; do
+            case "$img" in oan/*:local) continue ;; esac
+            docker manifest inspect "$img" >/dev/null 2>&1 || { echo "not pullable: $img"; fail=1; }
+          done
+          exit $fail
+      - name: Report
+        if: always()
+        run: cat out/REPORT.md

@@ -1,0 +1,11 @@
+# Hand-kept tweaks layered over the generated out/farmer/compose.yaml. Local resources only.
+services:
+  # Celery defaults to one prefork child per CPU (~80 MB each); two is plenty locally.
+  farmer-registry-celery-worker:
+    environment:
+      CELERY_OPTS: worker -Q registry_worker_queue --loglevel=info --concurrency=2
+  # Core's registrant authentication keeps its sign-in transactions in Redis and defaults to
+  # redis://localhost, which is not this container.
+  farmer-registry-staff-portal-api--pod:
+    environment:
+      REGISTRY_CORE_REGISTRANT_AUTH_REDIS_URL: redis://commons-redis-master:6379/0

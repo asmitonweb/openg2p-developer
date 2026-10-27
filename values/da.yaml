@@ -1,0 +1,17 @@
+# Local values for the COSS openg2p-da-registry chart (Layer 3, project "da").
+#
+# The DA registry is a placeholder today: the COSS repository holds only a README and the chart
+# ships every component disabled with empty images. This renders the shared plumbing
+# (database, Keycloak client, IAM registration) so the project exists; the application
+# containers appear once the repository has Dockerfiles and the chart enables them.
+global:
+  baseDomain: openg2p.localtest.me
+  registryHostname: da-registry.openg2p.localtest.me
+  staffPortalBaseUrl: http://da-registry.openg2p.localtest.me
+  keycloakBaseUrl: http://keycloak.openg2p.localtest.me
+  keycloakIssuerUrl: http://commons-keycloak:80/realms/staff
+  keycloakExternalIssuerUrl: http://keycloak.openg2p.localtest.me/realms/staff
+  masterDataTokenUrl: http://keycloak.openg2p.localtest.me/realms/staff/protocol/openid-connect/token
+  aweHostname: awe.openg2p.localtest.me
+  minioHost: minio-api.openg2p.localtest.me
+  minioSecure: false

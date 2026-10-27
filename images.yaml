@@ -1,0 +1,11 @@
+# Image rewrites applied while translating the rendered charts to Compose (scripts/gen.py).
+#
+# The COSS charts pin images in a private AWS ECR registry that developers cannot pull.
+# Rules here are tried first (regex -> replacement, Python re syntax). Any other ECR image
+# is then mapped generically to  $OAN_IMAGE_PREFIX/<product>/<role>:<tag>  with the digest
+# dropped, so the same compose can point at GHCR (pull) or at local builds (oan.sh build).
+rewrites:
+  # Consent Manager: the COSS chart pins a development build of the upstream service.
+  # Use the published upstream release the vendored subchart defaults to.
+  - match: '^\d+\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/openg2p/commons/consent-manager-(api|ui|sanity):.*$'
+    replace: 'openg2p/consent-manager-\1:1.0.2'

@@ -1,0 +1,59 @@
+# Publish a registry's images to GHCR so developers can pull instead of build.
+#
+# Copy this file to .github/workflows/ghcr-images.yml in a COSS registry repository and set the
+# two values under `env`. It builds the same roles with the same Dockerfiles the Jenkins pipeline
+# uses and tags each image
+#   ghcr.io/<owner>/<product>/<role>:<12-char commit sha>   (what the oan-helm charts pin)
+#   ghcr.io/<owner>/<product>/<role>:<branch>
+# Packages are created private by default: make them public once in the GitHub package settings.
+name: Publish images to GHCR
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+env:
+  # farmer-registry | cropsown-registry | livestock-registry  (image path segment used by the charts)
+  PRODUCT: farmer-registry
+  # farmer: docker/oan/<role>.Dockerfile      crop, live: docker/<role>/Dockerfile
+  DOCKERFILE_PATTERN: docker/oan/{role}.Dockerfile
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [staff-api, partner-api, celery, db-seed, staff-ui]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        shell: bash
+        run: |
+          owner=$(tr '[:upper:]' '[:lower:]' <<<"${{ github.repository_owner }}")
+          sha12=${GITHUB_SHA:0:12}
+          dockerfile=${DOCKERFILE_PATTERN/\{role\}/${{ matrix.role }}}
+          echo "image=ghcr.io/$owner/$PRODUCT/${{ matrix.role }}" >> "$GITHUB_OUTPUT"
+          echo "sha12=$sha12" >> "$GITHUB_OUTPUT"
+          echo "dockerfile=$dockerfile" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ steps.meta.outputs.dockerfile }}
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.sha12 }}
+            ${{ steps.meta.outputs.image }}:${{ github.ref_name }}
+          cache-from: type=gha,scope=${{ matrix.role }}
+          cache-to: type=gha,scope=${{ matrix.role }},mode=max

@@ -1,0 +1,51 @@
+# Local values for the COSS openg2p-commons-services chart (Layer 2).
+#
+# The chart pins the shared dev cluster (development.oanstaging.com, Istio gateway, private ECR
+# images). Hostnames are rewritten to openg2p.localtest.me and private images remapped by
+# scripts/gen.py at translation time; what is set here is what Helm itself must know, plus the
+# parts of the dev configuration that have no equivalent on a laptop.
+global:
+  baseDomain: openg2p.localtest.me
+  keycloakBaseUrl: http://keycloak.openg2p.localtest.me
+  keycloakExternalIssuerUrl: http://keycloak.openg2p.localtest.me/realms/staff
+
+# Master Data owns geography and code lists for every registry. The COSS chart already seeds
+# Ethiopia's hierarchy from the ETH-OAN pack (ghcr.io/asmitonweb/master-data-db-seed) and the
+# agriculture code lists; keep that, and expose the public catalogue for dashboards.
+master-data:
+  masterDataAPI:
+    catalogue:
+      public:
+        enabled: true
+
+# Local URLs are plain HTTP, and browsers drop Secure cookies there, which sends the portals
+# round a login loop. The IAM default is Secure, so turn it off here.
+openg2p-iam-service:
+  iamStaffPortalApi:
+    envVars:
+      IAM_STAFF_AUTH_COOKIE_SECURE: false
+  iamAgentPortalApi:
+    envVars:
+      IAM_AGENT_AUTH_COOKIE_SECURE: false
+
+# Kafka-backed WebSub is a dev-cluster integration (pre-provisioned topics, an encryption
+# secret kept outside Git). Not needed to develop a registry; the Kafka profile stays available.
+websub:
+  enabled: false
+websubTopicProvisioning:
+  enabled: false
+
+# OAN additions whose images exist only in the private registry. Enable them once a public
+# image is published (see docs/images-and-seed-data.md) or build them locally.
+aggregationApi:
+  enabled: false
+consentPartnerPortal:
+  enabled: false
+
+# Consent Manager runs the published upstream release locally (images.yaml maps the private
+# build to it). OTP publishing to MinIO is an A2C integration that needs dev-only credentials.
+openg2p-consent-manager:
+  consentManagerApi:
+    envVars:
+      CONSENT_MANAGER_OTP_PUBLISH_ENABLED: 'false'
+      CONSENT_MANAGER_OTP_LOG_CODES: 'true'

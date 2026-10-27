@@ -1,0 +1,8 @@
+# Hand-kept tweaks layered over the generated out/live/compose.yaml. Local resources only.
+services:
+  livestock-registry-celery-worker:
+    environment:
+      CELERY_OPTS: worker -Q registry_worker_queue --loglevel=info --concurrency=2
+  livestock-registry-staff-portal-api--pod:
+    environment:
+      REGISTRY_CORE_REGISTRANT_AUTH_REDIS_URL: redis://commons-redis-master:6379/0

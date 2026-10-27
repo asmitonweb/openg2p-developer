@@ -1,0 +1,39 @@
+# Local values for the COSS openg2p-farmer-registry chart (Layer 3, project "farmer").
+# Images: the chart's private ECR images are remapped by scripts/gen.py (local build or GHCR).
+global:
+  baseDomain: openg2p.localtest.me
+  registryHostname: farmer-registry.openg2p.localtest.me
+  staffPortalBaseUrl: http://farmer-registry.openg2p.localtest.me
+  keycloakBaseUrl: http://keycloak.openg2p.localtest.me
+  keycloakIssuerUrl: http://commons-keycloak:80/realms/staff
+  keycloakExternalIssuerUrl: http://keycloak.openg2p.localtest.me/realms/staff
+  masterDataTokenUrl: http://keycloak.openg2p.localtest.me/realms/staff/protocol/openid-connect/token
+  aweHostname: awe.openg2p.localtest.me
+  idGeneratorHostname: idgenerator-farmer.openg2p.localtest.me
+  # One MinIO for every registry; the gateway serves it on the local domain over plain HTTP.
+  minioHost: minio-api.openg2p.localtest.me
+  minioSecure: false
+
+registry:
+  staffUi:
+    envVars:
+      # The farm location map loads OpenStreetMap tiles and looks up elevation.
+      CSP_SRC_IMG: 'self blob: data: http://minio-api.openg2p.localtest.me https://tile.openstreetmap.org'
+      CSP_SRC_CONNECT: 'self https://api.open-meteo.com'
+  dbSeed:
+    # Geography comes from Master Data (ETH-OAN pack); sample farmers are built from it.
+    loadGeoData: false
+    loadSampleData: true
+    loadImages: false
+    loadTemplates: true
+  # The sanity suite runs against the shared cluster after a deploy; locally it only costs an image.
+  sanity:
+    enabled: false
+
+# Superset dashboards need the commons Superset profile (heavy). Start them deliberately:
+# set enabled: true here and `./oan.sh up superset farmer`.
+analytics:
+  dashboards:
+    enabled: false
+  reportingViews:
+    enabled: true

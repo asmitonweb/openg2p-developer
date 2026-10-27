@@ -1,0 +1,27 @@
+# Local overrides for openg2p-commons-base. Same shape as the dev box's values:
+# one external domain, Keycloak pinned to it so every token carries one issuer.
+global:
+  baseDomain: openg2p.localtest.me
+  keycloakBaseUrl: http://keycloak.openg2p.localtest.me
+  kafkaUiHostname: kafka.openg2p.localtest.me
+  minioHostname: minio.openg2p.localtest.me
+
+keycloak:
+  # Single node: local caches instead of a jgroups cluster discovered over Kubernetes DNS.
+  cache:
+    enabled: false
+  extraEnvVars:
+    - name: KC_HOSTNAME
+      value: keycloak.openg2p.localtest.me
+    - name: KC_HOSTNAME_STRICT
+      value: "false"
+    - name: KC_HOSTNAME_STRICT_HTTPS
+      value: "false"
+    # The chart's limits are sized for a cluster node; cap the heap for a 7 GB Docker VM.
+    - name: JAVA_OPTS_APPEND
+      value: "-Xms256m -Xmx768m"
+
+minio:
+  istio:
+    virtualservice:
+      host: minio.openg2p.localtest.me

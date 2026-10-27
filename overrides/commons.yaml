@@ -1,0 +1,38 @@
+# Hand-kept tweaks layered over the generated out/commons/compose.yaml (stack.sh passes both
+# files). Keep this to local-resource concerns: anything that changes behaviour belongs in
+# values/*.yaml so it also shows in the rendered charts.
+services:
+  # Single-node KRaft Kafka (the chart's StatefulSet settings assume Kubernetes DNS).
+  commons-kafka-controller:
+    environment:
+      KAFKA_ENABLE_KRAFT: 'yes'
+      KAFKA_CFG_NODE_ID: '0'
+      KAFKA_CFG_PROCESS_ROLES: broker,controller
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@commons-kafka-controller:9093
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CFG_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_CFG_ADVERTISED_LISTENERS: INTERNAL://commons-kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_HEAP_OPTS: -Xmx384m -Xms128m
+  # MOSIP images write into their own image directories at start-up.
+  commons-services-esignet--pod:
+    user: 0:0
+  commons-services-mock-identity-system--pod:
+    user: 0:0
+  # One worker per API instead of one per CPU.
+  commons-services-pm-staff-portal-api--pod:
+    environment:
+      PARTNER_MANAGER_AUTH_DEFAULT_ISSUERS: '["http://keycloak.openg2p.localtest.me/realms/staff","http://commons-keycloak:80/realms/staff"]'
+      COMMON_AUTH_DEFAULT_ISSUERS: '["http://keycloak.openg2p.localtest.me/realms/staff"]'
+      PARTNER_MANAGER_NO_OF_WORKERS: '1'
+  commons-services-pm-partner-api--pod:
+    environment:
+      PARTNER_MANAGER_NO_OF_WORKERS: '1'
+  commons-services-cm-api--pod:
+    environment:
+      CONSENT_MANAGER_NO_OF_WORKERS: '1'
+  commons-services-cm-partner-api--pod:
+    environment:
+      CONSENT_MANAGER_NO_OF_WORKERS: '1'

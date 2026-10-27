@@ -1,0 +1,23 @@
+# Local values for the COSS openg2p-livestock-registry chart (Layer 3, project "live").
+# Images: the chart's private ECR images are remapped by scripts/gen.py (local build or GHCR).
+global:
+  baseDomain: openg2p.localtest.me
+  registryHostname: livestock-registry.openg2p.localtest.me
+  staffPortalBaseUrl: http://livestock-registry.openg2p.localtest.me
+  keycloakBaseUrl: http://keycloak.openg2p.localtest.me
+  keycloakIssuerUrl: http://commons-keycloak:80/realms/staff
+  keycloakExternalIssuerUrl: http://keycloak.openg2p.localtest.me/realms/staff
+  masterDataTokenUrl: http://keycloak.openg2p.localtest.me/realms/staff/protocol/openid-connect/token
+  aweHostname: awe.openg2p.localtest.me
+  idGeneratorHostname: idgenerator-livestock.openg2p.localtest.me
+  minioHost: minio-api.openg2p.localtest.me
+  minioSecure: false
+
+registry:
+  dbSeed:
+    loadGeoData: false
+    loadSampleData: true
+    loadImages: false
+    loadTemplates: true
+  sanity:
+    enabled: false

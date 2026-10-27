@@ -1,0 +1,8 @@
+# Hand-kept tweaks layered over the generated out/crop/compose.yaml. Local resources only.
+services:
+  cropsown-registry-celery-worker:
+    environment:
+      CELERY_OPTS: worker -Q registry_worker_queue --loglevel=info --concurrency=2
+  cropsown-registry-staff-portal-api--pod:
+    environment:
+      REGISTRY_CORE_REGISTRANT_AUTH_REDIS_URL: redis://commons-redis-master:6379/0
