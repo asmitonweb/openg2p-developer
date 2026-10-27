@@ -38,7 +38,15 @@ var="OAN_$(tr '[:lower:]' '[:upper:]' <<<"$id")_SRC"
 src="${!var:-${OAN_SRC_DIR:-src}/$repo}"
 if [ ! -d "$src" ]; then
   echo "cloning $ORG/$repo (${OAN_SRC_REF:-develop}) into $src"
-  git clone -q --branch "${OAN_SRC_REF:-develop}" "$ORG/$repo.git" "$src"
+  # Shell scripts are copied into Linux images: a CRLF checkout (Windows default) breaks every
+  # entrypoint with "exec /…/entrypoint.sh: no such file or directory".
+  git -c core.autocrlf=false clone -q --branch "${OAN_SRC_REF:-develop}" "$ORG/$repo.git" "$src"
+  git -C "$src" config core.autocrlf false
+fi
+if crlf=$(grep -rlU $'\r' --include='*.sh' --include='*.py' --exclude-dir=.git --exclude-dir=node_modules "$src" 2>/dev/null | head -3) && [ -n "$crlf" ]; then
+  echo "refusing to build: CRLF line endings in $src (e.g. $(head -1 <<<"$crlf")); Linux containers cannot run them." >&2
+  echo "fix: git -C \"$src\" config core.autocrlf false && git -C \"$src\" rm -rq --cached . && git -C \"$src\" reset -q --hard" >&2
+  exit 1
 fi
 echo "building $id from $src ($(git -C "$src" rev-parse --short HEAD 2>/dev/null || echo 'not a git checkout'))"
 
