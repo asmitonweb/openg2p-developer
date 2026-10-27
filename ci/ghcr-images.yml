@@ -3,8 +3,9 @@
 # Copy this file to .github/workflows/ghcr-images.yml in a COSS registry repository and set the
 # two values under `env`. It builds the same roles with the same Dockerfiles the Jenkins pipeline
 # uses and tags each image
-#   ghcr.io/<owner>/<product>/<role>:<12-char commit sha>   (what the oan-helm charts pin)
+#   ghcr.io/<owner>/<product>/<role>:latest                 (OAN convention: developers track latest)
 #   ghcr.io/<owner>/<product>/<role>:<branch>
+#   ghcr.io/<owner>/<product>/<role>:<12-char commit sha>   (what the oan-helm charts pin)
 # Packages are created private by default: make them public once in the GitHub package settings.
 name: Publish images to GHCR
 
@@ -53,7 +54,8 @@ jobs:
           file: ${{ steps.meta.outputs.dockerfile }}
           push: true
           tags: |
-            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.sha12 }}
+            ${{ steps.meta.outputs.image }}:latest
             ${{ steps.meta.outputs.image }}:${{ github.ref_name }}
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.sha12 }}
           cache-from: type=gha,scope=${{ matrix.role }}
           cache-to: type=gha,scope=${{ matrix.role }},mode=max

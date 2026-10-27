@@ -3,6 +3,7 @@
 # rendered from the same Helm charts that run on the shared dev cluster.
 #
 #   ./oan.sh up <farmer|crop|live|da>     one command: tools image, render, images, start
+#   ./oan.sh pull <registry>              fetch the newest published images (latest moved on GHCR)
 #   ./oan.sh build <registry> [role...]   (re)build the registry's images from source (src/<repo>)
 #   ./oan.sh render [registry...]         re-render the compose projects from the pinned charts
 #   ./oan.sh stop <registry|all>          stop containers; data volumes are kept
@@ -13,8 +14,9 @@
 #   ./oan.sh urls                         browser URLs and seeded users
 #
 # Image source (where the registry images come from), via OAN_IMAGE_SOURCE in .env or the shell:
-#   local  (default) build from the COSS source repositories with scripts/build.sh
-#   ghcr   pull ghcr.io/centre-for-open-societal-systems/<product>/<role>:<tag> (once published)
+#   ghcr   (default) pull ghcr.io/centre-for-open-societal-systems/<product>/<role>:latest;
+#          an image that cannot be pulled yet is built from source and tagged with that name
+#   local  always build from the COSS source repositories with scripts/build.sh (oan/…:local)
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,11 +25,12 @@ cd "$ROOT"
 # shellcheck disable=SC1091
 source scripts/registries.sh
 
-: "${OAN_IMAGE_SOURCE:=local}"
+# OAN images are tracked by a floating tag (latest), unlike the version-pinned OpenG2P images.
+: "${OAN_IMAGE_SOURCE:=ghcr}"
 case "$OAN_IMAGE_SOURCE" in
   local) export OAN_IMAGE_PREFIX=oan OAN_IMAGE_TAG=local ;;
-  ghcr)  export OAN_IMAGE_PREFIX="${OAN_IMAGE_PREFIX:-ghcr.io/centre-for-open-societal-systems}" OAN_IMAGE_TAG="${OAN_IMAGE_TAG:-}" ;;
-  *) echo "OAN_IMAGE_SOURCE must be local or ghcr" >&2; exit 1 ;;
+  ghcr)  export OAN_IMAGE_PREFIX="${OAN_IMAGE_PREFIX:-ghcr.io/centre-for-open-societal-systems}" OAN_IMAGE_TAG="${OAN_IMAGE_TAG:-latest}" ;;
+  *) echo "OAN_IMAGE_SOURCE must be ghcr or local" >&2; exit 1 ;;
 esac
 
 # Every Helm subchart is a Compose profile; without this, `compose config` sees only profile-less services.
@@ -55,10 +58,24 @@ ensure_images() {
   if [ "$OAN_IMAGE_SOURCE" = local ]; then
     echo "images to build: ${missing[*]}"
     scripts/build.sh "$id"
-  else
-    echo "pulling: ${missing[*]}"
-    for img in "${missing[@]}"; do docker pull "$img"; done
+    return 0
   fi
+  local unpulled=() product
+  for img in "${missing[@]}"; do
+    echo "pulling $img"
+    docker pull -q "$img" >/dev/null 2>&1 || unpulled+=("$img")
+  done
+  [ ${#unpulled[@]} -gt 0 ] || return 0
+  # Not published (yet): build the registry from source and give the builds the published names,
+  # so the rendered compose files stay the same and a later `docker pull` replaces them.
+  echo "not on GHCR yet: ${unpulled[*]}"
+  echo "building from source instead (OAN_IMAGE_SOURCE=local does this always)"
+  scripts/build.sh "$id"
+  product=$(reg_field "$id" 5)
+  for img in "${unpulled[@]}"; do
+    role=${img##*/}; role=${role%%:*}
+    docker tag "oan/$product/$role:local" "$img"
+  done
 }
 
 urls() {
@@ -85,6 +102,11 @@ case "$cmd" in
     scripts/stack.sh up "$id"
     echo; urls "$id" ;;
   build) scripts/build.sh "$@" ;;
+  pull)
+    id="${1:-}"; [ -n "$id" ] || { echo "usage: ./oan.sh pull <registry>" >&2; exit 1; }
+    [ -f "out/$id/compose.yaml" ] || { echo "render first: ./oan.sh render $id" >&2; exit 1; }
+    while read -r img; do docker pull "$img"; done < <(images_of "$id")
+    echo "restart to use them: ./oan.sh up $id" ;;
   render) scripts/render.sh "$@" ;;
   stop|down|rerun|ps|ram|create) scripts/stack.sh "$cmd" "$@" ;;
   logs) docker logs -f --tail 200 "$@" ;;

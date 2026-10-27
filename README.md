@@ -33,9 +33,10 @@ cd oan-developer
 ./oan.sh up farmer        # or: crop | live        (Windows: oan.cmd up farmer)
 ```
 
-The first run builds the tools image, renders the charts, builds the registry's images from its
-COSS source repository (cloned into `src/`, about 15 minutes), pulls the commons images, then
-starts everything in Helm release order: infrastructure, database init jobs, Keycloak init, the
+The first run builds the tools image, renders the charts, pulls the registry's images from GHCR
+(`:latest`; while a registry is not published there yet it is built from its COSS source
+repository, cloned into `src/`, about 15 minutes), pulls the commons images, then starts
+everything in Helm release order: infrastructure, database init jobs, Keycloak init, the
 services, and finally the registry's seed job. A second `up` takes seconds.
 
 Then open:
@@ -76,7 +77,7 @@ Profiles beyond the default bundle (eSignet, ODK Central, Superset, Kafka, …) 
 | --- | --- | --- | --- |
 | Commons Base | `openg2p-commons-base` from openg2p.github.io/openg2p-helm | newest release candidate in [OpenG2P/versions](https://github.com/OpenG2P/versions) | upstream Docker Hub |
 | Commons Services | `openg2p-commons-services` from the COSS [oan-helm](https://github.com/Centre-for-Open-Societal-Systems/oan-helm) repository | oan-helm `repository/index.yaml` | upstream Docker Hub, plus the ETH-OAN Master Data seed on GHCR |
-| Registry | `openg2p-<registry>-registry` from oan-helm | oan-helm index | built locally from the COSS source repo (default) or pulled from GHCR once published |
+| Registry | `openg2p-<registry>-registry` from oan-helm | oan-helm index | `ghcr.io/centre-for-open-societal-systems/<product>/<role>:latest` (OAN tracks a floating tag); built from the COSS source repo when not published yet, or always with `OAN_IMAGE_SOURCE=local` |
 
 Details: [docs/architecture.md](docs/architecture.md), [docs/registries.md](docs/registries.md),
 [docs/images-and-seed-data.md](docs/images-and-seed-data.md). How to contribute without touching

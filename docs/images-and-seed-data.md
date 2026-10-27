@@ -9,16 +9,32 @@
 | Master Data seed (ETH-OAN pack) | `ghcr.io/asmitonweb/master-data-db-seed:0.0.0-develop.118-oan.1` | yes |
 | Consent Manager | COSS chart pins a private dev build; `images.yaml` maps it to upstream `openg2p/consent-manager-*:1.0.2` | yes |
 | Aggregation API, consent partner portal | COSS additions, private ECR only; disabled in `values/commons-services.yaml` | no public image yet |
-| Registry images (staff-api, partner-api, celery, db-seed, staff-ui) | COSS CI pushes to private ECR only | **no** → built locally (default) or GHCR once published |
+| Registry images (staff-api, partner-api, celery, db-seed, staff-ui) | `ghcr.io/centre-for-open-societal-systems/<product>/<role>:latest` once the GHCR workflow runs in each COSS repo (PRs farmer-registry #139, cropsown-regsitry #125, livestock-registry #80); until then built locally from source | yes once published |
 
 CI for this repository checks that every image referenced by the rendered compose files is either
-an `oan/*:local` build target or publicly resolvable with `docker manifest inspect`.
+a local build target or publicly resolvable with `docker manifest inspect`.
 
-## Registry images: local builds (default)
+## Tagging convention: OAN tracks `latest`
 
-`OAN_IMAGE_SOURCE=local` (the default) makes `gen.py` write `oan/<product>/<role>:local` and
-`oan.sh up` builds any that are missing with `scripts/build.sh`, which reproduces each repo's CI
-build: same Dockerfiles, repo root as context, default build args.
+OpenG2P pins every image to a release version. OAN does not: registry images are consumed by
+their floating `latest` tag, which the GHCR workflow moves on every push to `develop`. The same
+build is also tagged `:develop` and with the 12-character commit sha (what the oan-helm charts
+pin), so a developer who needs exactly what the dev cluster runs sets `OAN_IMAGE_TAG=<sha12>`.
+`docker pull` picks up a moved `latest` only when asked: `./oan.sh pull <registry>` refreshes.
+
+## Registry images: GHCR (default) with build fallback
+
+`OAN_IMAGE_SOURCE=ghcr` (the default) makes `gen.py` write
+`ghcr.io/centre-for-open-societal-systems/<product>/<role>:latest`. `oan.sh up` pulls what is
+missing; an image that is not published yet is built from source with `scripts/build.sh` and
+tagged with the published name, so the compose files never change and a later pull replaces it.
+
+## Registry images: local builds
+
+`OAN_IMAGE_SOURCE=local` makes `gen.py` write `oan/<product>/<role>:local` and `oan.sh up` always
+builds what is missing with `scripts/build.sh`, which reproduces each repo's CI build: same
+Dockerfiles, repo root as context, default build args. This is the mode for working on a
+registry's own source.
 
 | Registry | Dockerfiles | Roles built |
 | --- | --- | --- |
@@ -35,11 +51,11 @@ The COSS repositories publish only to ECR today. To let developers pull instead 
 registry repository needs a GitHub Actions workflow that pushes to GHCR under the COSS
 organisation. A ready-to-adopt workflow is in [`ci/ghcr-images.yml`](../ci/ghcr-images.yml):
 it builds the same roles with the same Dockerfiles on pushes to `develop` and tags
-`ghcr.io/centre-for-open-societal-systems/<product>/<role>:<12-char sha>` and `:develop`.
+`ghcr.io/centre-for-open-societal-systems/<product>/<role>:latest`, `:develop` and
+`:<12-char sha>`. Pull requests adding it are open on the three registry repositories.
 
-Once that runs, `OAN_IMAGE_SOURCE=ghcr` in `.env` is enough: the chart's tag is already the
-12-character source commit, so the pins line up with no further change. If the workflow cannot
-live in the COSS organisation, the same file works in a fork with
+Once it has run and the packages are public, nothing changes here: the default already pulls
+`:latest`. If the workflow cannot live in the COSS organisation, the same file works in a fork with
 `OAN_IMAGE_PREFIX=ghcr.io/<fork-owner>`.
 
 ## Seed data
