@@ -21,9 +21,10 @@ renders) and openg2p-data (the Master Data packs). `./oan.sh src status` lists t
 | **use** | `ghcr` (default) | `ghcr.io/asmitonweb/<product>/<role>:latest`, built hourly from COSS `develop` | running, testing someone else's change, demos |
 | **develop** | `local` | `oan/<product>/<role>:local`, built from `oan-workspace/<repo>` | changing a component |
 
-`./oan.sh dev <component>` switches to develop mode: it adds the component to the selection,
-writes `OAN_IMAGE_SOURCE=local` to `.env`, builds the images from the workspace and starts the
-stack. Commons (layers 1 and 2) are the same published images in both modes. To go back to
+`./oan.sh dev` switches to develop mode: it writes `OAN_IMAGE_SOURCE=local` to `.env`, builds the
+selection's images from the workspace and starts the stack (`./oan.sh dev <component>` adds that
+component to the selection first; with nothing selected yet it opens the checklist). Mandatory
+parts of commons, such as the Consent Manager, are always selected and cannot be removed. Commons (layers 1 and 2) are the same published images in both modes. To go back to
 published images, set `OAN_IMAGE_SOURCE=ghcr` in `.env` and run `./oan.sh up`.
 
 ```
@@ -47,7 +48,7 @@ entrypoint and `build` refuses it.
 ## The change loop
 
 ```bash
-./oan.sh dev farmer                          # 1. farmer from source (first time: ~15 min of image builds)
+./oan.sh select && ./oan.sh dev              # 1. pick farmer, run it from source (first time: ~15 min of builds)
 cd oan-workspace/farmer-registry
 git switch -c odk-geo-codes                  # 2. your branch (see "Git flow" below)
 #   ... edit metadata, widgets, extension package, seeds ...

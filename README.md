@@ -33,30 +33,12 @@ bump is a change to `versions.env` and a re-render, never a hand-ported compose 
 ```bash
 git clone -b oan-developer https://github.com/asmitonweb/openg2p-developer.git oan-developer
 cd oan-developer
-./oan.sh dev farmer            # Windows: oan.cmd dev farmer
+./oan.sh select                # Windows: oan.cmd select   — pick what runs, in the terminal
+./oan.sh dev                   # build the selection from source and start it
 ```
 
-`dev farmer` does everything a developer needs for the farmer registry:
-
-1. renders the charts into Compose projects;
-2. clones **every OAN repository** (`develop`) into `oan-workspace/`: the registries, Consent
-   Manager, the aggregation API, the dashboards and their APIs, oan-helm and openg2p-data, so the
-   whole codebase is next to the running system whatever you selected;
-3. builds the registry's images from `oan-workspace/farmer-registry` (about 15 minutes the first
-   time) and pulls the commons images;
-4. starts everything in Helm release order: infrastructure, database init jobs, Keycloak init,
-   the services, and finally the registry's seed job.
-
-A second run takes seconds. `./oan.sh up` does the same with the **published** images
-(`ghcr.io/asmitonweb/...:latest`, rebuilt hourly from COSS `develop`) and still provisions the
-workspace. Existing checkouts are never touched: branches, remotes and uncommitted work in
-`oan-workspace/` are yours.
-
-Pick what runs with the checklist, in the terminal:
-
-```bash
-./oan.sh select                # space toggles, enter saves to .env; dependencies follow automatically
-```
+The checklist (space toggles, enter saves to `.env`; dependencies follow automatically and the
+mandatory parts of commons are fixed):
 
 ```
 Select components  space toggle  ↑↓/jk move  enter save  q cancel
@@ -64,13 +46,30 @@ Select components  space toggle  ↑↓/jk move  enter save  q cancel
    [ ] crop                     registry  Crop sown registry
    [ ] live                     registry  Livestock registry
    [ ] da                       registry  DA registry (empty stub upstream: renders nothing yet)
-   [x] consent-manager          service   Consent Manager (OAN build; always part of commons)
+   [x] consent-manager          service   Consent Manager (OAN build; always part of commons) always
    [ ] aggregation-api          service   Aggregation layer over the OAN services
    [ ] consent-partner-portal   service   Consent partner portal
    [x] farmer-dashboard-api     feature   Farmer dashboard API (reads the registry database)
    [x] farmer-dashboard         addon     Farmer dashboard (Next.js)
    ...
 ```
+
+`dev` then does everything a developer needs for that selection:
+
+1. renders the charts into Compose projects;
+2. clones **every OAN repository** (`develop`) into `oan-workspace/`: the registries, Consent
+   Manager, the aggregation API, the dashboards and their APIs, oan-helm and openg2p-data, so the
+   whole codebase is next to the running system whatever you selected;
+3. builds the selected components' images from their checkouts (about 15 minutes the first time
+   for a registry) and pulls the commons images;
+4. starts everything in Helm release order: infrastructure, database init jobs, Keycloak init,
+   the services, and finally the seed jobs.
+
+A second run takes seconds. `./oan.sh up` does the same with the **published** images
+(`ghcr.io/asmitonweb/...:latest`, rebuilt hourly from COSS `develop`) and still provisions the
+workspace. Existing checkouts are never touched: branches, remotes and uncommitted work in
+`oan-workspace/` are yours. `./oan.sh select` again changes what runs; `./oan.sh dev crop` adds
+a component to the selection on the way.
 
 Then open:
 
@@ -91,7 +90,7 @@ are pinned in `state/secrets.json`, which is git-ignored.
 ## The developer loop
 
 ```bash
-./oan.sh dev farmer                    # farmer from oan-workspace/farmer-registry (sets OAN_IMAGE_SOURCE=local)
+./oan.sh dev                           # the selection from oan-workspace/ (sets OAN_IMAGE_SOURCE=local)
 #   ... edit oan-workspace/farmer-registry on your own branch ...
 ./oan.sh reload farmer staff-api       # rebuild the roles you touched, restart the services running them
 ./oan.sh reload farmer db-seed && ./oan.sh rerun farmer-registry-db-seed    # metadata / seed changes

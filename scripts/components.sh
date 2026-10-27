@@ -94,8 +94,11 @@ comp_dockerfile() {
   done
   return 1
 }
-# The current selection: OAN_COMPONENTS from .env, else the default.
-selected_components() { comp_closure ${OAN_COMPONENTS:-$DEFAULT_COMPONENTS}; }
+# Mandatory components are always part of the stack: services the commons-services chart ships
+# without a switch (field 11 is '-'). They are always selected and cannot be deselected.
+comp_mandatory() { local r; for r in "${COMPONENTS[@]}"; do [ "$(cut -d'|' -f2 <<<"$r")" = service ] && [ "$(cut -d'|' -f11 <<<"$r")" = - ] && printf '%s ' "${r%%|*}"; done; }
+# The current selection: the mandatory components plus OAN_COMPONENTS from .env (else the default).
+selected_components() { comp_closure $(comp_mandatory) ${OAN_COMPONENTS:-$DEFAULT_COMPONENTS}; }
 
 # Backwards-compatible names for the registry-only helpers.
 reg_ids() { comp_by_kind registry; }

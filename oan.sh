@@ -2,9 +2,9 @@
 # OAN developer stack: Commons Base + Commons Services + the registries, services and dashboards
 # you select, on Docker Compose, rendered from the same Helm charts as the shared dev cluster.
 #
-#   ./oan.sh select                       pick components in a checklist (saved to .env)
-#   ./oan.sh up [component...]            one command: render, source into oan-workspace/, images, start
-#   ./oan.sh dev <component>              the same, images built from your code in oan-workspace/
+#   ./oan.sh select                       pick what runs in a checklist (saved to .env; mandatory parts are fixed)
+#   ./oan.sh up [component...]            one command: render, every repo into oan-workspace/, images, start
+#   ./oan.sh dev [component...]           the same, images built from your code in oan-workspace/
 #   ./oan.sh src <clone|status|dir> ...   the checkouts in oan-workspace/ (COSS develop)
 #   ./oan.sh reload <component> [role...] rebuild roles from oan-workspace/ and restart what runs them
 #   ./oan.sh pull [component...]          fetch the newest published images (latest moved on GHCR)
@@ -115,26 +115,29 @@ ensure_images() {  # ensure_images <ns...>: pull (with progress) or build every 
 
 # ── interactive checklist ──────────────────────────────────────────────────
 select_menu() {
-  local ids=() kinds=() titles=() checked=() r i n cur=0 key saved=" $(selected_components | tr '\n' ' ') "
+  local ids=() kinds=() titles=() checked=() locked=() r i n cur=0 key saved=" $(selected_components | tr '\n' ' ') " mandatory=" $(comp_mandatory)"
   for r in "${COMPONENTS[@]}"; do
     [ "$(cut -d'|' -f2 <<<"$r")" != source ] || continue   # code only: always in the workspace, nothing to run
     ids+=("${r%%|*}"); kinds+=("$(cut -d'|' -f2 <<<"$r")"); titles+=("$(cut -d'|' -f13 <<<"$r")")
   done
   n=${#ids[@]}
-  for ((i = 0; i < n; i++)); do case "$saved" in *" ${ids[i]} "*) checked[i]=1 ;; *) checked[i]=0 ;; esac; done
+  for ((i = 0; i < n; i++)); do
+    case "$saved" in *" ${ids[i]} "*) checked[i]=1 ;; *) checked[i]=0 ;; esac
+    case "$mandatory" in *" ${ids[i]} "*) locked[i]=1; checked[i]=1 ;; *) locked[i]=0 ;; esac
+  done
   check() {  # check <i>: tick it and what it requires
     local j req; checked[$1]=1; req=$(comp_field "${ids[$1]}" 12)
     [ "$req" = - ] || for j in "${!ids[@]}"; do case " $req " in *" ${ids[j]} "*) check "$j" ;; esac; done
   }
-  uncheck() {  # uncheck <i>: untick it and what depends on it
-    local j; checked[$1]=0
+  uncheck() {  # uncheck <i>: untick it and what depends on it; mandatory ones stay
+    local j; [ "${locked[$1]}" = 1 ] && return 0; checked[$1]=0
     for j in "${!ids[@]}"; do [ "${checked[j]}" = 1 ] && case " $(comp_field "${ids[j]}" 12) " in *" ${ids[$1]} "*) uncheck "$j" ;; esac; done
   }
   result() { local i; for ((i = 0; i < n; i++)); do [ "${checked[i]}" = 1 ] && printf '%s ' "${ids[i]}"; done; }
   # The menu is drawn on stderr: stdout carries only the result (the caller captures it).
   if [ -z "$UI_TTY" ]; then
     echo "Components (current selection marked):" >&2
-    for ((i = 0; i < n; i++)); do printf '  %2d %s %-24s %s\n' $((i + 1)) "$([ "${checked[i]}" = 1 ] && echo '[x]' || echo '[ ]')" "${ids[i]}" "${titles[i]}" >&2; done
+    for ((i = 0; i < n; i++)); do printf '  %2d %s %-24s %s%s\n' $((i + 1)) "$([ "${checked[i]}" = 1 ] && echo '[x]' || echo '[ ]')" "${ids[i]}" "${titles[i]}" "$([ "${locked[i]}" = 1 ] && echo ' (always)')" >&2; done
     printf 'numbers to toggle (space separated), Enter to keep: ' >&2
     read -r line
     for i in $line; do i=$((i - 1)); [ "${checked[i]}" = 1 ] && uncheck "$i" || check "$i"; done
@@ -146,9 +149,10 @@ select_menu() {
     local i mark cursor
     printf '%s%sSelect components%s  %sspace%s toggle  %s↑↓/jk%s move  %senter%s save  %sq%s cancel\n' "$C_BOLD" "$C_BLUE" "$C_OFF" "$C_BOLD" "$C_OFF" "$C_BOLD" "$C_OFF" "$C_BOLD" "$C_OFF" "$C_BOLD" "$C_OFF" >&3
     for ((i = 0; i < n; i++)); do
-      [ "${checked[i]}" = 1 ] && mark="${C_GREEN}[x]${C_OFF}" || mark="[ ]"
+      if [ "${locked[i]}" = 1 ]; then mark="${C_DIM}[x]${C_OFF}"
+      elif [ "${checked[i]}" = 1 ]; then mark="${C_GREEN}[x]${C_OFF}"; else mark="[ ]"; fi
       [ $i -eq $cur ] && cursor="${C_BLUE}▶${C_OFF}" || cursor=" "
-      printf '\e[K %s %s %-24s %s%-9s%s %s\n' "$cursor" "$mark" "${ids[i]}" "$C_DIM" "${kinds[i]}" "$C_OFF" "${titles[i]}" >&3
+      printf '\e[K %s %s %-24s %s%-9s%s %s%s\n' "$cursor" "$mark" "${ids[i]}" "$C_DIM" "${kinds[i]}" "$C_OFF" "${titles[i]}" "$([ "${locked[i]}" = 1 ] && printf ' %salways%s' "$C_DIM" "$C_OFF")" >&3
     done
     printf '\e[K%sselected:%s %s\n' "$C_DIM" "$C_OFF" "$(result)" >&3
     printf '\e[K%sservices become part of commons; features and add-ons join their registry%s\n' "$C_DIM" "$C_OFF" >&3
@@ -249,10 +253,10 @@ case "$cmd" in
     for id in "$@"; do comp_field "$id" 1 >/dev/null; done
     up "$@" ;;
   dev)
-    id="${1:-}"; [ -n "$id" ] || { echo "usage: ./oan.sh dev <component>   ($(comp_ids))" >&2; exit 1; }
-    comp_field "$id" 1 >/dev/null
+    for id in "$@"; do comp_field "$id" 1 >/dev/null; done
+    if [ $# -eq 0 ] && [ -z "${OAN_COMPONENTS:-}" ] && [ -n "$UI_TTY" ]; then do_select; fi
     [ "$OAN_IMAGE_SOURCE" = local ] || { set_env OAN_IMAGE_SOURCE local; note "OAN_IMAGE_SOURCE=local written to .env: images now come from your source checkouts"; }
-    sel=$(comp_closure $(selected_components) "$id" | tr '\n' ' '); sel=${sel% }
+    sel=$(comp_closure $(selected_components) "$@" | tr '\n' ' '); sel=${sel% }
     [ "$sel" = "${OAN_COMPONENTS:-}" ] || { set_env OAN_COMPONENTS "\"$sel\""; note "OAN_COMPONENTS=\"$sel\""; }
     OAN_IMAGE_SOURCE=local OAN_COMPONENTS="$sel" exec "$0" up ;;
   src) scripts/src.sh "$@" ;;
