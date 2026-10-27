@@ -14,7 +14,7 @@
 #   ./oan.sh urls                         browser URLs and seeded users
 #
 # Image source (where the registry images come from), via OAN_IMAGE_SOURCE in .env or the shell:
-#   ghcr   (default) pull ghcr.io/centre-for-open-societal-systems/<product>/<role>:latest;
+#   ghcr   (default) pull ghcr.io/asmitonweb/<product>/<role>:latest (built from COSS develop);
 #          an image that cannot be pulled yet is built from source and tagged with that name
 #   local  always build from the COSS source repositories with scripts/build.sh (oan/…:local)
 set -euo pipefail
@@ -29,7 +29,9 @@ source scripts/registries.sh
 : "${OAN_IMAGE_SOURCE:=ghcr}"
 case "$OAN_IMAGE_SOURCE" in
   local) export OAN_IMAGE_PREFIX=oan OAN_IMAGE_TAG=local ;;
-  ghcr)  export OAN_IMAGE_PREFIX="${OAN_IMAGE_PREFIX:-ghcr.io/centre-for-open-societal-systems}" OAN_IMAGE_TAG="${OAN_IMAGE_TAG:-latest}" ;;
+  # Published from the asmitonweb forks (mirrors of COSS develop) because org packages can only
+  # be made public by repository admins; move the prefix to the organisation when that changes.
+  ghcr)  export OAN_IMAGE_PREFIX="${OAN_IMAGE_PREFIX:-ghcr.io/asmitonweb}" OAN_IMAGE_TAG="${OAN_IMAGE_TAG:-latest}" ;;
   *) echo "OAN_IMAGE_SOURCE must be ghcr or local" >&2; exit 1 ;;
 esac
 

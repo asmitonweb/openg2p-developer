@@ -77,7 +77,7 @@ Profiles beyond the default bundle (eSignet, ODK Central, Superset, Kafka, …) 
 | --- | --- | --- | --- |
 | Commons Base | `openg2p-commons-base` from openg2p.github.io/openg2p-helm | newest release candidate in [OpenG2P/versions](https://github.com/OpenG2P/versions) | upstream Docker Hub |
 | Commons Services | `openg2p-commons-services` from the COSS [oan-helm](https://github.com/Centre-for-Open-Societal-Systems/oan-helm) repository | oan-helm `repository/index.yaml` | upstream Docker Hub, plus the ETH-OAN Master Data seed on GHCR |
-| Registry | `openg2p-<registry>-registry` from oan-helm | oan-helm index | `ghcr.io/centre-for-open-societal-systems/<product>/<role>:latest` (OAN tracks a floating tag); built from the COSS source repo when not published yet, or always with `OAN_IMAGE_SOURCE=local` |
+| Registry | `openg2p-<registry>-registry` from oan-helm | oan-helm index | `ghcr.io/asmitonweb/<product>/<role>:latest`, built from COSS `develop` by the fork mirror workflow (OAN tracks a floating tag); built from source when not published yet, or always with `OAN_IMAGE_SOURCE=local` |
 
 Details: [docs/architecture.md](docs/architecture.md), [docs/registries.md](docs/registries.md),
 [docs/images-and-seed-data.md](docs/images-and-seed-data.md). How to contribute without touching

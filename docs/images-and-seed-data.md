@@ -9,7 +9,7 @@
 | Master Data seed (ETH-OAN pack) | `ghcr.io/asmitonweb/master-data-db-seed:0.0.0-develop.118-oan.1` | yes |
 | Consent Manager | COSS chart pins a private dev build; `images.yaml` maps it to upstream `openg2p/consent-manager-*:1.0.2` | yes |
 | Aggregation API, consent partner portal | COSS additions, private ECR only; disabled in `values/commons-services.yaml` | no public image yet |
-| Registry images (staff-api, partner-api, celery, db-seed, staff-ui) | `ghcr.io/centre-for-open-societal-systems/<product>/<role>:latest` once the GHCR workflow runs in each COSS repo (PRs farmer-registry #139, cropsown-regsitry #125, livestock-registry #80); until then built locally from source | yes once published |
+| Registry images (staff-api, partner-api, celery, db-seed, staff-ui) | `ghcr.io/asmitonweb/<product>/<role>:latest`, built from COSS `develop` by the mirror workflow on the `asmitonweb` fork (`ci/fork-mirror-and-images.yml`, branch `oan-ci`); until a registry is published, built locally from source | yes once published |
 
 CI for this repository checks that every image referenced by the rendered compose files is either
 a local build target or publicly resolvable with `docker manifest inspect`.
@@ -25,9 +25,23 @@ pin), so a developer who needs exactly what the dev cluster runs sets `OAN_IMAGE
 ## Registry images: GHCR (default) with build fallback
 
 `OAN_IMAGE_SOURCE=ghcr` (the default) makes `gen.py` write
-`ghcr.io/centre-for-open-societal-systems/<product>/<role>:latest`. `oan.sh up` pulls what is
-missing; an image that is not published yet is built from source with `scripts/build.sh` and
-tagged with the published name, so the compose files never change and a later pull replaces it.
+`ghcr.io/asmitonweb/<product>/<role>:latest`. `oan.sh up` pulls what is missing; an image that
+is not published yet is built from source with `scripts/build.sh` and tagged with the published
+name, so the compose files never change and a later pull replaces it.
+
+### Why a fork, not the organisation
+
+A package published under the COSS organisation can only be made public by someone with admin
+on it, which an org package inherits from the repository: repository admins, not maintainers.
+A workflow was tried in `farmer-registry` (PR #139) and reverted (PR #140) for that reason. The
+fork `asmitonweb/farmer-registry` therefore carries, on its default branch `oan-ci`, the
+workflow in [`ci/fork-mirror-and-images.yml`](../ci/fork-mirror-and-images.yml): every 30
+minutes it force-mirrors COSS `develop` and `staging` into the fork and builds the images from
+COSS `develop` (skipping commits already published). The fork's `develop` is therefore always
+identical to COSS `develop`; nothing OAN-specific is committed to it. The same file, with
+`UPSTREAM`/`PRODUCT`/`DOCKERFILE_PATTERN` changed, serves the crop and livestock forks. When the
+organisation allows public packages, switch `OAN_IMAGE_PREFIX` back to
+`ghcr.io/centre-for-open-societal-systems` and adopt `ci/ghcr-images.yml` in the COSS repos.
 
 ## Registry images: local builds
 
@@ -52,11 +66,8 @@ registry repository needs a GitHub Actions workflow that pushes to GHCR under th
 organisation. A ready-to-adopt workflow is in [`ci/ghcr-images.yml`](../ci/ghcr-images.yml):
 it builds the same roles with the same Dockerfiles on pushes to `develop` and tags
 `ghcr.io/centre-for-open-societal-systems/<product>/<role>:latest`, `:develop` and
-`:<12-char sha>`. Pull requests adding it are open on the three registry repositories.
-
-Once it has run and the packages are public, nothing changes here: the default already pulls
-`:latest`. If the workflow cannot live in the COSS organisation, the same file works in a fork with
-`OAN_IMAGE_PREFIX=ghcr.io/<fork-owner>`.
+`:<12-char sha>`. It is the organisation-side alternative to the fork mirror above, for when
+repository admins can make the packages public.
 
 ## Seed data
 

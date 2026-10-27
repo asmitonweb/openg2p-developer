@@ -1,0 +1,92 @@
+# For a personal fork of a COSS registry repository, when the organisation's packages cannot be
+# made public (only repository admins get admin on an org package).
+#
+# Lives on a dedicated branch of the fork (e.g. `oan-ci`, set as the fork's default branch so the
+# schedule runs). It never commits to the mirrored branches:
+#   mirror  force-pushes the upstream COSS `develop` and `staging` into the fork, byte for byte
+#   images  builds the registry images from upstream COSS `develop` and pushes them to the fork
+#           owner's GHCR:  ghcr.io/<owner>/<product>/<role>:latest | :develop | :<12-char sha>
+# Set UPSTREAM, PRODUCT and DOCKERFILE_PATTERN below. Make each package public once (Package
+# settings → Change visibility); later pushes keep the visibility.
+name: Mirror COSS and publish OAN images
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [oan-ci]
+
+env:
+  UPSTREAM: Centre-for-Open-Societal-Systems/farmer-registry
+  # farmer-registry | cropsown-registry | livestock-registry  (image path segment used by the charts)
+  PRODUCT: farmer-registry
+  # farmer: docker/oan/{role}.Dockerfile      crop, live: docker/{role}/Dockerfile
+  DOCKERFILE_PATTERN: docker/oan/{role}.Dockerfile
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    outputs:
+      sha12: ${{ steps.up.outputs.sha12 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: up
+        name: Mirror upstream develop and staging into this fork
+        run: |
+          git remote add upstream "https://github.com/${UPSTREAM}.git"
+          git fetch --no-tags upstream develop staging
+          git push --force origin refs/remotes/upstream/develop:refs/heads/develop refs/remotes/upstream/staging:refs/heads/staging
+          sha=$(git rev-parse refs/remotes/upstream/develop)
+          echo "sha12=${sha:0:12}" >> "$GITHUB_OUTPUT"
+          echo "upstream develop at ${sha:0:12}"
+
+  images:
+    needs: mirror
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [staff-api, partner-api, celery, db-seed, staff-ui]
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        shell: bash
+        run: |
+          owner=$(tr '[:upper:]' '[:lower:]' <<<"${{ github.repository_owner }}")
+          image="ghcr.io/$owner/$PRODUCT/${{ matrix.role }}"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "dockerfile=${DOCKERFILE_PATTERN/\{role\}/${{ matrix.role }}}" >> "$GITHUB_OUTPUT"
+          # Already published for this upstream commit (and this is not a manual run): nothing to do.
+          if [ "${{ github.event_name }}" != workflow_dispatch ] && docker manifest inspect "$image:${{ needs.mirror.outputs.sha12 }}" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.meta.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.UPSTREAM }}
+          ref: develop
+      - if: steps.meta.outputs.skip != 'true'
+        uses: docker/setup-buildx-action@v3
+      - if: steps.meta.outputs.skip != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ steps.meta.outputs.dockerfile }}
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:latest
+            ${{ steps.meta.outputs.image }}:develop
+            ${{ steps.meta.outputs.image }}:${{ needs.mirror.outputs.sha12 }}
+          cache-from: type=gha,scope=${{ matrix.role }}
+          cache-to: type=gha,scope=${{ matrix.role }},mode=max
