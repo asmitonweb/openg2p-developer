@@ -15,8 +15,10 @@ global:
 
 registry:
   dbSeed:
+    # Sample data stays off: the cropsown-registry db-seed image ships no /seed/load_sample_data.py, and
+    # the platform entrypoint exits 1 when LOAD_SAMPLE_DATA=true finds no loader.
     loadGeoData: false
-    loadSampleData: true
+    loadSampleData: false
     loadImages: false
     loadTemplates: true
   sanity:

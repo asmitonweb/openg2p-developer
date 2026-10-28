@@ -47,11 +47,13 @@ the file disappears and the note stops appearing.
 - **Geography** for every registry comes from Master Data, which the commons-services chart
   seeds from the `ETH-OAN` country pack (`ghcr.io/asmitonweb/master-data-db-seed`, built from the
   openg2p-data fork). The registry seeds run with `loadGeoData: false`.
-- **Sample records** are switched per registry with `loadSampleData` in `values/<id>.yaml` (on for
-  crop and livestock, off for farmer until its upstream sample loader matches the pack's codes).
-  The farmer seed builds its sample people from Master Data; crop and livestock ship SQL sample sets in
-  `docker/db-seed/sample-data/`. Crop and livestock additionally apply their own Ethiopia geo SQL
-  to the Master Data database (`LOAD_ETHIOPIA_GEO`, default true in their entrypoints).
+- **Sample records and images are off in every registry** (`loadSampleData: false`,
+  `loadImages: false` in each `values/<id>.yaml`; CI fails if a rendered seed turns either on). The
+  crop and livestock seed images ship no `/seed/load_sample_data.py` or `/seed/upload_images.py`,
+  and the platform entrypoint exits 1 when a flag finds no loader. The farmer image has one, but it
+  sends display text where the pack expects codes (see
+  [images and seed data](images-and-seed-data.md#sample-farmers-are-off)). Create records through
+  the staff UI or ODK.
 - **Templates** (DCI/VC) load with `loadTemplates: true`.
 - **Reporting views** (`reporting.views.enabled`, farmer: `analytics.reportingViews.enabled`) are
   on in every registry's values: the dashboard APIs read them. They are materialized; the chart's

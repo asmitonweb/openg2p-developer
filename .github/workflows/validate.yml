@@ -43,6 +43,11 @@ jobs:
             if docker compose "${files[@]}" config -q; then echo "$ns ok"; else echo "$ns INVALID"; fail=1; fi
           done
           exit $fail
+      - name: No registry seed loads sample data or images
+        # The crop and livestock seed images ship no loader for either (the entrypoint exits 1), and
+        # the farmer loader is rejected by attribute validation; see docs/registries.md.
+        run: |
+          ! grep -rnE "LOAD_(SAMPLE_DATA|IMAGES): '?true" out/*/compose.yaml
       - name: No private hosts or registries in the compose projects
         run: |
           ! grep -rE 'oanstaging\.com|dkr\.ecr\.|istio-system' out/*/compose.yaml out/files
