@@ -5,7 +5,7 @@
 #   ./oan.sh select                       pick what runs in a checklist (saved to .env; mandatory parts are fixed)
 #   ./oan.sh up [component...]            one command: render, every repo into oan-workspace/, images, start
 #   ./oan.sh dev [component...]           the same, images built from your code in oan-workspace/
-#   ./oan.sh src <clone|status|dir> ...   the checkouts in oan-workspace/ (COSS develop)
+#   ./oan.sh src <clone|status|sync|dir>  the checkouts in oan-workspace/ (sync: stash, rebase onto COSS develop, pop)
 #   ./oan.sh reload <component> [role...] rebuild roles from oan-workspace/ and restart what runs them
 #   ./oan.sh pull [component...]          fetch the newest published images (latest moved on GHCR)
 #   ./oan.sh build <component> [role...]  (re)build a component's images from oan-workspace/<repo>

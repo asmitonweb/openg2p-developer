@@ -42,9 +42,11 @@ oan-workspace/
   openg2p-data/                    Master Data packs (source kind)
 ```
 
-The scripts never modify a checkout that exists: no reset, no branch switch (`src status` only
-fetches `origin/develop` to show the distance; after the remote rename below that is your fork's
-`develop`, so keep it in step with upstream). Git in
+The scripts never modify a checkout that exists: no reset, no branch switch. `src status` only
+fetches COSS `develop` (from whichever remote points at Centre-for-Open-Societal-Systems) to show
+the distance. The one exception is on request: `src sync` stashes your uncommitted work, rebases the
+current branch onto COSS `develop` (never your fork; fast-forwards `develop` itself) and pops the
+stash, stopping at the first conflict. Git in
 `oan-workspace/<repo>` is yours. To use a checkout you already have elsewhere, point
 `OAN_<ID>_SRC` (`OAN_FARMER_SRC`, `OAN_CONSENT_MANAGER_SRC`, …) or `OAN_SRC_DIR` at it in `.env`.
 On Windows the clones are made with `core.autocrlf=false`; a CRLF checkout breaks every container
@@ -63,7 +65,8 @@ cd -
 ./oan.sh reload farmer db-seed               #    metadata or seed change: rebuild, then
 ./oan.sh rerun farmer-registry-db-seed       #    re-run the seed job (metadata is applied as a whole tree)
 ./oan.sh logs farmer-registry-staff-portal-api--pod   # container names = service names (./oan.sh ps)
-./oan.sh src status                          # 4. every checkout: branch, distance from develop, dirty files
+./oan.sh src status                          # 4. every checkout: branch, distance from COSS develop, dirty files
+./oan.sh src sync farmer                     # 5. before the PR: stash, rebase onto COSS develop, pop (see "Git flow")
 ```
 
 `reload` finds the services from the compose file, builds only the roles you name (all roles of
@@ -141,12 +144,21 @@ done by you. The expected flow for someone without push rights on the COSS repos
    changed and why, not how it was produced. No ticket keys, no tool attributions, no
    `Co-Authored-By` trailers for tools. Squash fix-up commits before the PR, or ask for a squash merge.
 
-4. **Rebase** before you push, resolve conflicts in the checkout, then `./oan.sh reload` to run
-   the rebased code:
+4. **Rebase** before you push, then `./oan.sh reload` to run the rebased code:
 
    ```bash
-   git fetch upstream develop && git rebase upstream/develop
+   ./oan.sh src sync farmer      # fetch COSS develop; git stash -u; git rebase <coss>/develop; git stash pop
    ```
+
+   The source is always the COSS repository, never your fork: the remote whose URL is
+   `Centre-for-Open-Societal-Systems/<repo>` is used, and `upstream` is added when none is. A clean
+   tree is not stashed; a branch already on top of COSS `develop` is left alone. On `develop`
+   itself it fast-forwards, and refuses (with the commands to move them) if `develop` carries local
+   commits. It stops at the first conflict and prints what to do: resolve the files in the
+   checkout, `git add` them, `git rebase --continue`, then `git stash pop` if it had stashed
+   anything. A stash that conflicts with the new `develop` is kept until you `git stash drop` it.
+   The exit code is 1 when any checkout needed your attention. A rebased branch that was already
+   pushed needs `git push --force-with-lease`.
 
 5. **Push and open the pull request** against the COSS repository's `develop`:
 
@@ -162,9 +174,9 @@ done by you. The expected flow for someone without push rights on the COSS repos
 6. **A chart change** (new env var, job, volume) goes to [oan-helm](https://github.com/Centre-for-Open-Societal-Systems/oan-helm)
    in the same review cycle. Once the chart is released, bump its pin in `versions.env` here.
 
-7. **Merged?** `git fetch upstream develop && git merge --ff-only upstream/develop` on your
-   `develop`, and within an hour the published `:latest` image carries it, so `ghcr` users get it
-   on their next `./oan.sh pull`.
+7. **Merged?** `./oan.sh src sync farmer` on your `develop` fast-forwards it to COSS, and within
+   an hour the published `:latest` image carries it, so `ghcr` users get it on their next
+   `./oan.sh pull`.
 
 ## What you must not do
 

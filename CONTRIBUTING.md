@@ -58,9 +58,12 @@ The step-by-step version with commands is [docs/developing-a-registry.md](docs/d
    Metadata is applied as a **whole tree** by the seed job; never apply one file by hand.
 5. Add or update tests in the repository (schema/metadata validation, sanity tests) and run them
    the way the repository's CI does.
-6. Commit, rebase onto `upstream/develop`, push to your fork and open the pull request against the
-   COSS repository's `develop`. Describe the behaviour, not the ticket number. The delivery
-   pipeline promotes `develop → testing → staging → release`.
+6. Commit, then `./oan.sh src sync <component>`: it stashes your uncommitted work, rebases the
+   branch onto COSS `develop` (always COSS, never your fork) and pops the stash, stopping where you
+   must resolve a conflict. Push to your fork (`git push --force-with-lease` if the branch was
+   pushed before the rebase) and open the pull request against the COSS repository's `develop`.
+   Describe the behaviour, not the ticket number. The delivery pipeline promotes
+   `develop → testing → staging → release`.
 7. If the change needs a chart change (new env var, new job), make the oan-helm change in the
    same review cycle and bump the chart pin here (`versions.env`) once it is released.
 

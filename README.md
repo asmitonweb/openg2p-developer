@@ -95,12 +95,15 @@ are pinned in `state/secrets.json`, which is git-ignored.
 #   ... edit oan-workspace/farmer-registry on your own branch ...
 ./oan.sh reload farmer staff-api       # rebuild the roles you touched, restart the services running them
 ./oan.sh reload farmer db-seed && ./oan.sh rerun farmer-registry-db-seed    # metadata / seed changes
-./oan.sh src status                    # every checkout: branch, distance from develop, uncommitted files
+./oan.sh src status                    # every checkout: branch, distance from COSS develop, uncommitted files
+./oan.sh src sync farmer               # before the PR: stash, rebase your branch onto COSS develop (never your fork), pop
 ```
 
-Forking, branching, rebasing and opening the pull request on COSS `develop` are ordinary git and
-GitHub, done by you; [docs/developing-a-registry.md](docs/developing-a-registry.md) walks through
-the expected flow, the tests each repository's CI runs, the commit conventions and what must
+Forking, branching and opening the pull request on COSS `develop` are ordinary git and GitHub,
+done by you (`./oan.sh src sync <component>` does the rebase onto COSS `develop` around your
+uncommitted work and stops where you must resolve a conflict);
+[docs/developing-a-registry.md](docs/developing-a-registry.md) walks through the expected flow,
+the tests each repository's CI runs, the commit conventions and what must
 never be changed (the platform). The same loop works for every component:
 `./oan.sh dev consent-manager`, `./oan.sh dev farmer-dashboard`, …
 
